@@ -1,11 +1,11 @@
-# gate (合并版)
+# openvp (合并版)
 
 三条独立的自动刷新流水线, 共用一个 GitHub Pages 站点和**一个监控页**(`index.html`)。
-数据文件命名规则: `<工作流名>.<格式>`。
+数据文件命名规则: `<名称>.<格式>` (名称 = sstp / ovpn / pool; sstp 由 `gate.yml` + `vpngate.py` 生成)。
 
 | 工作流 | 脚本 | 频率 | 输出 (站点根目录) |
 |---|---|---|---|
-| `gate.yml` | `vpngate.py` | 每 3 小时 | `gate.json`(含机房节点) `gate.txt`(vless 订阅) `gate.yaml`(Clash) `gate-chains.txt` `gate-hosts.txt` (后四者在住宅节点 > 20 个时不含机房节点) |
+| `gate.yml` | `vpngate.py` | 每 3 小时 | `sstp.json`(含机房节点) `sstp.txt`(vless 订阅) `sstp.yaml`(Clash) `sstp-chains.txt` `sstp-hosts.txt` (后四者在住宅节点 > 20 个时不含机房节点) |
 | `ovpn.yml` | `refresh_ovpn.py` | 每 3 小时 | `ovpn.json`(Pages, 含机房节点) `ovpn.yaml`(Clash, 私有 Worker; 住宅节点 > 20 个时不含机房节点) |
 | `pool.yml` | `refresh_pool.py` | 每天检查, 周日 11:00(北京)刷新 | `pool.json` `pool.txt`(vless 订阅) `pool.yaml`(Clash) |
 
@@ -14,7 +14,7 @@
 ## 站点
 
 `https://<用户>.github.io/<仓库>/` 打开 `index.html`, 一页显示三块: 优选池 / OpenVPN / SSTP。
-页面读取同目录的 `pool.json` `ovpn.json` `gate.json`。OpenVPN 与 SSTP 列表均按 住宅 → 机房 → 未识别 排序。
+页面读取同目录的 `pool.json` `ovpn.json` `sstp.json`。OpenVPN 与 SSTP 列表均按 住宅 → 机房 → 未识别 排序。
 
 ## 为什么每个工作流都先恢复站点
 
@@ -47,8 +47,8 @@ Pages 每次部署都是整站替换。每个工作流开头运行 `tools/prepar
    若之前配置过 `UPLOAD_KEY`, 可在 Worker 和仓库里删除。
 6. (可选) 让 Worker 主域名直接显示监控页: 在 Worker 设置 → Variables 添加普通变量 `PAGES_URL`
    (即 Pages 站点根地址, 不带末尾 `/`)。之后 `<WORKER_URL>/` 就是监控页, 并转发
-   `pool.json` `ovpn.json` `gate.json` `gate-chains.txt` `gate-hosts.txt`。
-7. 三个工作流各手动运行一次。订阅地址: `<WORKER_URL>/<ACCESS_TOKEN>/gate.txt`、
-   `pool.txt`、`gate.yaml`、`pool.yaml`、`ovpn.yaml`。
+   `pool.json` `ovpn.json` `sstp.json` `sstp-chains.txt` `sstp-hosts.txt`。
+7. 三个工作流各手动运行一次。订阅地址: `<WORKER_URL>/<ACCESS_TOKEN>/sstp.txt`、
+   `pool.txt`、`sstp.yaml`、`pool.yaml`、`ovpn.yaml`。
 
 上传失败时工作流会报错并且不部署, 旧数据保持不变。

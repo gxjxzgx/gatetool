@@ -10,11 +10,11 @@ VPN Gate SSTP 节点检测流水线
   4. 并发调用已部署的 Cloudflare Worker: GET {WORKER}/check?proxyip=host:port
      (单节点 HTTP 成功 != 节点可用; 以 Worker 返回 JSON 的 success 字段为准)
   5. 保留 success=true 的节点, 按国家分组, 生成 public/ 下的
-     gate.json / gate.txt / gate.yaml / gate-chains.txt / gate-hosts.txt
-     - gate.json (网页) 含全部可用节点, 同国家内按 住宅 > 机房 > 未识别 排序
-     - 住宅(ISP)节点 > 20 个时, 机房节点只在网页(gate.json)显示, 不写入
-       gate.txt / gate.yaml / gate-chains.txt / gate-hosts.txt (GATE_MIN_ISP / GATE_EXCLUDE_DC 可调)
-  6. 网页端 (GitHub Pages) 读取 gate.json 展示
+     sstp.json / sstp.txt / sstp.yaml / sstp-chains.txt / sstp-hosts.txt
+     - sstp.json (网页) 含全部可用节点, 同国家内按 住宅 > 机房 > 未识别 排序
+     - 住宅(ISP)节点 > 20 个时, 机房节点只在网页(sstp.json)显示, 不写入
+       sstp.txt / sstp.yaml / sstp-chains.txt / sstp-hosts.txt (GATE_MIN_ISP / GATE_EXCLUDE_DC 可调)
+  6. 网页端 (GitHub Pages) 读取 sstp.json 展示
 
 退出码:
   0 = 正常完成 (允许部分节点检测失败)
@@ -432,7 +432,7 @@ def build_outputs(results, raw_count, sstp_count, source):
     return data
 
 
-CHAIN_URL = os.environ.get("CHAIN_URL", _site_file("gate-chains.txt"))
+CHAIN_URL = os.environ.get("CHAIN_URL", _site_file("sstp-chains.txt"))
 
 
 def _sorted_countries(data):
@@ -470,7 +470,7 @@ GATE_MIN_ISP = int(os.environ.get("GATE_MIN_ISP", "20"))
 
 
 def subscription_view(data):
-    """返回写订阅/清单文件用的数据视图: 满足条件时去掉机房节点 (gate.json 不受影响)。"""
+    """返回写订阅/清单文件用的数据视图: 满足条件时去掉机房节点 (sstp.json 不受影响)。"""
     isp_n = data["stats"]["residential_est"]
     if not (GATE_EXCLUDE_DC and isp_n > GATE_MIN_ISP):
         return data
@@ -560,7 +560,7 @@ EDGE_HOSTS = [
     if h.strip()
 ]
 
-HOSTS_URL = os.environ.get("HOSTS_URL", _site_file("gate-hosts.txt"))
+HOSTS_URL = os.environ.get("HOSTS_URL", _site_file("sstp-hosts.txt"))
 
 def build_hosts_text(data):
     """生成可直接粘贴到 edgetunnel 后台「自定义优选IP」框的清单。
@@ -601,7 +601,7 @@ def build_hosts_text(data):
 EDT_UUID = os.environ.get("EDT_UUID", "REPLACE_WITH_YOUR_EDT_UUID")
 EDT_DOMAIN = os.environ.get("EDT_DOMAIN", "REPLACE_WITH_YOUR_EDT_DOMAIN")
 EDT_FINGERPRINT = os.environ.get("EDT_FINGERPRINT", "chrome")
-SUB_URL = os.environ.get("SUB_URL", _site_file("gate.txt"))
+SUB_URL = os.environ.get("SUB_URL", _site_file("sstp.txt"))
 
 
 def _b64_secret_encode(plaintext, secret):
@@ -745,13 +745,13 @@ def write_outputs(data):
         os.replace(tmp, path)
         return path
 
-    sub = subscription_view(data)   # 住宅 > 20 时去掉机房节点, 只给网页(gate.json)看
+    sub = subscription_view(data)   # 住宅 > 20 时去掉机房节点, 只给网页(sstp.json)看
     return (
-        put("gate.json"),                                 # 监控页数据 (全部可用节点)
-        put("gate-chains.txt", build_chains_text(sub)),   # edgetunnel 链式代理清单
-        put("gate-hosts.txt", build_hosts_text(sub)),     # 「自定义优选IP」清单
-        put("gate.txt", build_sub_text(sub)),             # 完整 vless:// 订阅
-        put("gate.yaml", build_clash_text(sub)),          # Clash / Mihomo / FlClash 配置
+        put("sstp.json"),                                 # 监控页数据 (全部可用节点)
+        put("sstp-chains.txt", build_chains_text(sub)),   # edgetunnel 链式代理清单
+        put("sstp-hosts.txt", build_hosts_text(sub)),     # 「自定义优选IP」清单
+        put("sstp.txt", build_sub_text(sub)),             # 完整 vless:// 订阅
+        put("sstp.yaml", build_clash_text(sub)),          # Clash / Mihomo / FlClash 配置
     )
 
 

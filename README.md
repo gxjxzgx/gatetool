@@ -29,3 +29,23 @@ Pages 每次部署都是整站替换。每个工作流开头运行 `tools/prepar
 3. 用自定义域名时, 在 Variables 里加 `PAGES_URL` (站点根地址, 不带末尾 `/`)。
 4. 在 GitHub 网页上手动创建 `.github/workflows/` 下三个 yml (API 推不了 workflows 文件)。
 5. Actions 页依次手动运行 `CF Edge Pool Refresh`、`OpenVPN Refresh`、`Gate SSTP Check` 各一次。
+
+---
+
+## 方案 B: 订阅放私有 Worker (不进 Pages / Actions 产物)
+
+含 UUID 的 4 个文件由工作流上传到你自己的 Cloudflare Worker (KV), 站点上不发布。
+
+1. **先在 edgetunnel 后台换一个新 UUID**, 同步更新 secret `EDT_UUID`。
+2. Cloudflare 控制台: 新建 KV 命名空间, 记下 id, 填进 `worker/wrangler.toml`
+   (或在 Worker 设置里绑定, 绑定名必须是 `SUBS`)。
+3. 部署 `worker/worker.js` 为一个 Worker (控制台粘贴代码即可), 并绑定自定义域名
+   (国内直连 workers.dev 常常不通, 建议用你自己的域名)。
+4. 在 Worker 设置里添加两个 **Secret**: `UPLOAD_KEY` (上传密钥)、`ACCESS_TOKEN` (订阅访问令牌),
+   都用 `openssl rand -hex 16` 生成。
+5. 仓库 Secrets 添加: `WORKER_URL` (如 `https://sub.example.com`)、`UPLOAD_KEY` (同上)、
+   `ACCESS_TOKEN` (同上, 仅用于订阅文件头部的地址注释)。
+6. 三个工作流各手动运行一次。订阅地址: `<WORKER_URL>/<ACCESS_TOKEN>/gate.txt`、
+   `pool.txt`、`gate.yaml`、`pool.yaml`。
+
+上传失败时工作流会报错并且不部署, 旧数据保持不变。

@@ -76,7 +76,7 @@
   <div class="legend">「住宅 / 数据中心」按 VPN Gate 主机名前缀估算（vpn+数字→住宅，public-vpn→机房），非严格判定。住宅节点 > 20 个时，机房节点只在此页显示，不写入订阅；列表按 住宅 → 机房 → 未识别 排序。</div>
   <div id="ovpn-countries"></div>
 
-  <h2>🛰 SSTP 节点检测 <small style="color:var(--muted);font-weight:400">gate</small></h2>
+  <h2>🛰 SSTP 节点检测 <small style="color:var(--muted);font-weight:400">sstp</small></h2>
   <div class="cards" id="gate-cards"></div>
   <div class="bar" data-s="gate">
     <span class="pill on" data-f="all">全部</span>
@@ -248,7 +248,7 @@ async function getJson(name) {
 }
 
 async function load() {
-  const res = await Promise.all([getJson('pool.json'), getJson('ovpn.json'), getJson('gate.json')]);
+  const res = await Promise.all([getJson('pool.json'), getJson('ovpn.json'), getJson('sstp.json')]);
   POOL = res[0]; OVPN = res[1]; GATE = res[2];
   renderPool(); renderOvpn(); renderGate();
   document.getElementById('foot').textContent =

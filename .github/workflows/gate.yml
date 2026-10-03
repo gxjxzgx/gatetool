@@ -2,6 +2,7 @@ name: Gate SSTP Check
 
 # VPN Gate SSTP 节点检测 (经 Cloudflare Worker), 每 3 小时一次。
 # 输出 gate.json / gate.txt / gate.yaml / gate-chains.txt / gate-hosts.txt; 其余文件沿用线上旧版。
+# 住宅(ISP)节点 > 20 个时, 机房节点只进 gate.json (网页显示), 不进订阅/清单文件。
 on:
   schedule:
     - cron: "40 */3 * * *"

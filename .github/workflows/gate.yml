@@ -1,0 +1,67 @@
+name: Gate SSTP Check
+
+# VPN Gate SSTP 节点检测 (经 Cloudflare Worker), 每 30 分钟一次。
+# 输出 gate.json / gate.txt / gate.yaml / gate-chains.txt / gate-hosts.txt; 其余文件沿用线上旧版。
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write   # 仅用于重新启用本工作流, 防止 60 天无活动被停用
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # 三个工作流共用同一个组: 串行发布, 避免互相用旧数据覆盖
+    concurrency:
+      group: site-publish
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Keep schedule alive (best effort)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/gate.yml/enable" || true
+
+      - name: Restore site from Pages
+        env:
+          PAGES_URL: ${{ vars.PAGES_URL }}
+        run: bash tools/prepare_site.sh
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check nodes and build gate.* files
+        env:
+          PUBLIC_DIR: site
+          CHECK_WORKER: "https://check.zx10.eu.cc/check?sstp=vpn:vpn@"
+          CHECK_CONCURRENCY: "32"
+          CHECK_TIMEOUT: "90"
+          EDT_UUID: ${{ secrets.EDT_UUID }}
+          EDT_DOMAIN: ${{ secrets.EDT_DOMAIN }}
+        run: python vpngate.py
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

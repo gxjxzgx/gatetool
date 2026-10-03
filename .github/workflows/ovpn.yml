@@ -1,0 +1,61 @@
+name: OpenVPN Refresh
+
+# VPN Gate OpenVPN 节点提取 + TCP 存活检查, 每 3 小时一次。
+# 输出 ovpn.yaml / ovpn.json 到站点根目录; 其余文件沿用线上旧版。
+on:
+  schedule:
+    - cron: "10 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: site-publish
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Keep schedule alive (best effort)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/ovpn.yml/enable" || true
+
+      - name: Restore site from Pages
+        env:
+          PAGES_URL: ${{ vars.PAGES_URL }}
+        run: bash tools/prepare_site.sh
+
+      - name: Extract OpenVPN nodes
+        env:
+          OUT_DIR: site
+          OVPN_CHECK_TIMEOUT: "5"
+          OVPN_WORKERS: "32"
+          OVPN_KEEP_UDP: "0"      # UDP 无法做 TCP 检查, 直接丢弃
+        run: python refresh_ovpn.py
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

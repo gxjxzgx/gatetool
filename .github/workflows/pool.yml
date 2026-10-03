@@ -1,0 +1,88 @@
+name: CF Edge Pool Refresh
+
+# Cloudflare 优选池: 每天 11:20 (北京时间) 检查一次, 实际刷新条件:
+#   手动触发 / 线上无数据 / 数据超过 8 天 / 周日且距上次刷新超过 20 小时
+# 不需要刷新时, 后面的步骤全部跳过 (不重复部署)。
+# 输出 pool.json / pool.txt / pool.yaml 到站点根目录。
+on:
+  schedule:
+    - cron: "20 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: site-publish
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Keep schedule alive (best effort)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/pool.yml/enable" || true
+
+      - name: Restore site from Pages
+        env:
+          PAGES_URL: ${{ vars.PAGES_URL }}
+        run: bash tools/prepare_site.sh
+
+      - name: Decide whether to refresh
+        id: need
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          from datetime import datetime, timezone, timedelta
+          now = datetime.now(timezone.utc)
+          age_h = None
+          try:
+              d = json.load(open("site/pool.json", encoding="utf-8"))
+              t = datetime.strptime(d["updated_at"], "%Y-%m-%d %H:%M").replace(tzinfo=timezone(timedelta(hours=8)))
+              age_h = (now - t).total_seconds() / 3600
+          except Exception:
+              pass
+          manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+          sunday_slot = now.weekday() == 6 and now.hour == 3   # 周日 11:00-11:59 北京时间
+          run = manual or age_h is None or age_h > 8 * 24 or (sunday_slot and age_h > 20)
+          print("run=" + ("true" if run else "false"))
+          PY
+
+      - name: Refresh edge pool
+        if: steps.need.outputs.run == 'true'
+        env:
+          OUT_DIR: site
+          EDT_DOMAIN: ${{ secrets.EDT_DOMAIN }}
+          EDT_UUID: ${{ secrets.EDT_UUID }}
+          POOL_SIZE: "50"
+          SAMPLE_SIZE: "350"
+        run: python refresh_pool.py
+
+      - uses: actions/configure-pages@v5
+        if: steps.need.outputs.run == 'true'
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.need.outputs.run == 'true'
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        if: steps.need.outputs.run == 'true'
+        uses: actions/deploy-pages@v4

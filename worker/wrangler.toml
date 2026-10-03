@@ -2,6 +2,9 @@ name = "openvp-subs"
 main = "worker.js"
 compatibility_date = "2026-01-01"
 
+[vars]
+PAGES_URL = "https://<用户>.github.io/<仓库>"   # 或你的 Pages 自定义域名, 不带末尾 /
+
 [[kv_namespaces]]
 binding = "SUBS"
 id = "<填入你的 KV namespace id>"

@@ -1,7 +1,7 @@
 // 私有订阅托管 Worker (KV 绑定名: SUBS)
 //   PUT  /upload/<文件名>        Authorization: Bearer <ACCESS_TOKEN>  -> 写入 KV (GitHub Actions 调用)
 //   GET  /<ACCESS_TOKEN>/<文件名>                                       -> 客户端订阅地址
-//   GET  /  及  /pool.json /ovpn.json /gate.json /gate-chains.txt /gate-hosts.txt
+//   GET  /  及  /pool.json /ovpn.json /sstp.json /sstp-chains.txt /sstp-hosts.txt
 //        -> 从 GitHub Pages 转发 (监控页 + 公开数据), 需要变量 PAGES_URL
 // 变量/密钥 (Worker 设置里添加):
 //   Secret   ACCESS_TOKEN  (上传与订阅共用这一个)
@@ -10,8 +10,8 @@
 const FILES = {
   "pool.txt": "text/plain; charset=utf-8",
   "pool.yaml": "text/yaml; charset=utf-8",
-  "gate.txt": "text/plain; charset=utf-8",
-  "gate.yaml": "text/yaml; charset=utf-8",
+  "sstp.txt": "text/plain; charset=utf-8",
+  "sstp.yaml": "text/yaml; charset=utf-8",
   "ovpn.yaml": "text/yaml; charset=utf-8",
 };
 const MAX_BYTES = 5_000_000;
@@ -22,9 +22,9 @@ const PUBLIC = {
   "index.html": "index.html",
   "pool.json": "pool.json",
   "ovpn.json": "ovpn.json",
-  "gate.json": "gate.json",
-  "gate-chains.txt": "gate-chains.txt",
-  "gate-hosts.txt": "gate-hosts.txt",
+  "sstp.json": "sstp.json",
+  "sstp-chains.txt": "sstp-chains.txt",
+  "sstp-hosts.txt": "sstp-hosts.txt",
 };
 const PUBLIC_TYPES = {
   html: "text/html; charset=utf-8",

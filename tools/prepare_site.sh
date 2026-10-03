@@ -11,9 +11,9 @@ base="${base%/}"
 
 mkdir -p site
 
-# 含 UUID 的 pool.txt/pool.yaml/gate.txt/gate.yaml 不在 Pages 上, 由私有 Worker 保存, 这里不恢复
+# pool.txt/pool.yaml/gate.txt/gate.yaml/ovpn.yaml 不在 Pages 上, 由私有 Worker 保存, 这里不恢复
 FILES="pool.json
-ovpn.json ovpn.yaml
+ovpn.json
 gate.json gate-chains.txt gate-hosts.txt"
 
 for f in $FILES; do

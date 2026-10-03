@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 把私有订阅 (含 UUID 的 pool/gate, 以及 ovpn.yaml) 上传到私有 Worker (KV), 然后从 site/ 删除, 不发布到 Pages。
+# 把私有订阅 (含 UUID 的 pool/sstp, 以及 ovpn.yaml) 上传到私有 Worker (KV), 然后从 site/ 删除, 不发布到 Pages。
 # 需要环境变量: WORKER_URL (如 https://sub.example.com, 不带末尾 /), ACCESS_TOKEN
 set -eu
 : "${WORKER_URL:?请设置 secret WORKER_URL}"
@@ -9,7 +9,7 @@ set -eu
 WORKER_URL="$(printf '%s' "$WORKER_URL" | tr -d '[:space:]')"
 WORKER_URL="${WORKER_URL%/}"
 ACCESS_TOKEN="$(printf '%s' "$ACCESS_TOKEN" | tr -d '[:space:]')"
-FILES="pool.txt pool.yaml gate.txt gate.yaml ovpn.yaml"
+FILES="pool.txt pool.yaml sstp.txt sstp.yaml ovpn.yaml"
 
 resp="$(mktemp)"
 for f in $FILES; do

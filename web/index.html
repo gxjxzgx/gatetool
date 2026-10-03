@@ -21,14 +21,6 @@
   .card .k { color: var(--muted); font-size: 12px; }
   .card .v { font-size: 24px; font-weight: 700; margin-top: 4px; }
   .card .v small { font-size: 13px; font-weight: 400; color: var(--muted); }
-  .links { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-  .links a { background: var(--panel2); border: 1px solid var(--border); color: var(--accent); border-radius: 999px; padding: 6px 14px; font-size: 13px; text-decoration: none; }
-  .links a:hover { border-color: var(--accent); }
-  .qlinks { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 6px 16px; }
-  .qrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 0; border-top: 1px solid var(--border); }
-  .qrow:first-child { border-top: none; }
-  .qk { color: var(--muted); font-size: 13px; min-width: 110px; }
-  .qrow .links { margin-bottom: 0; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
   .pill { background: var(--panel2); border: 1px solid var(--border); color: var(--text); border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer; user-select: none; }
   .pill.on { border-color: var(--accent); color: var(--accent); }
@@ -81,7 +73,7 @@
     <span class="pill" data-f="datacenter">数据中心</span>
     <span class="pill" data-f="unknown">未识别</span>
   </div>
-  <div class="legend">「住宅 / 数据中心」按 VPN Gate 主机名前缀估算（vpn+数字→住宅，public-vpn→机房），非严格判定。</div>
+  <div class="legend">「住宅 / 数据中心」按 VPN Gate 主机名前缀估算（vpn+数字→住宅，public-vpn→机房），非严格判定。住宅节点 > 20 个时，机房节点只在此页显示，不写入订阅；列表按 住宅 → 机房 → 未识别 排序。</div>
   <div id="ovpn-countries"></div>
 
   <h2>🛰 SSTP 节点检测 <small style="color:var(--muted);font-weight:400">gate</small></h2>
@@ -92,26 +84,10 @@
     <span class="pill" data-f="datacenter">数据中心</span>
     <span class="pill" data-f="unknown">未识别</span>
   </div>
-  <div class="legend">节点来自 VPN Gate（仅 TCP 入口中继），由 Cloudflare Worker 检测；「住宅 / 数据中心」为基于出口信息的估算。点击 host:port 复制 sstp 链接。</div>
+  <div class="legend">节点来自 VPN Gate（仅 TCP 入口中继），由 Cloudflare Worker 检测；「住宅 / 数据中心」为基于出口信息的估算。点击 host:port 复制 sstp 链接。住宅节点 &gt; 20 个时，机房节点只在此页显示，不写入订阅/清单；列表按 住宅 → 机房 → 未识别 排序。</div>
   <div id="gate-countries"></div>
 
   <div class="footer" id="foot">加载中…</div>
-
-  <h2>🔗 快速访问</h2>
-  <div class="qlinks">
-    <div class="qrow"><span class="qk">pool · 优选池</span><span class="links">
-      <a href="pool.json">pool.json</a>
-    </span></div>
-    <div class="qrow"><span class="qk">ovpn · OpenVPN</span><span class="links">
-      <a href="ovpn.json">ovpn.json</a>
-    </span></div>
-    <div class="qrow"><span class="qk">gate · SSTP</span><span class="links">
-      <a href="gate-chains.txt">gate-chains.txt</a>
-      <a href="gate-hosts.txt">gate-hosts.txt</a>
-      <a href="gate.json">gate.json</a>
-    </span></div>
-    <div class="qrow"><span class="qk">订阅</span><span style="color:var(--muted);font-size:13px">私有订阅（pool.txt / pool.yaml / gate.txt / gate.yaml / ovpn.yaml）不在此公开，请使用你保存的私有地址。</span></div>
-  </div>
 </div>
 
 <script>
@@ -191,12 +167,15 @@ function renderPool() {
 function renderOvpn() {
   const d = OVPN, box = document.getElementById('ovpn-countries');
   if (!d) { document.getElementById('ovpn-cards').innerHTML = '<div class="empty">OpenVPN 数据加载失败</div>'; box.innerHTML = ''; return; }
-  const es = d.entries || [];
+  const RANK = { residential: 0, datacenter: 1 };
+  const rank = function (t) { return RANK[t] != null ? RANK[t] : 2; };
+  const es = (d.entries || []).slice().sort(function (a, b) { return rank(a.ip_type) - rank(b.ip_type); });
   const res = es.filter(function (e) { return e.ip_type === 'residential'; }).length;
   const dc = es.filter(function (e) { return e.ip_type === 'datacenter'; }).length;
+  const unk = es.length - res - dc;
   document.getElementById('ovpn-cards').innerHTML =
     card('节点数量', d.checked || es.length) + card('可用数量', d.total || es.length) +
-    card('国家数量', Object.keys(d.countries || {}).length) + card('住宅 / 机房 (估算)', res, '机房 ' + dc) +
+    card('国家数量', Object.keys(d.countries || {}).length) + card('住宅 / 机房 (估算)', res, '机房 ' + dc + ' · 未识别 ' + unk) +
     card('更新时间', '<small>' + esc(d.updated_at || '—') + '</small>');
   const groups = {};
   es.forEach(function (e) {
@@ -223,8 +202,11 @@ function renderGate() {
     card('可用节点', esc(s.success), 'success = true') + card('国家数量', esc(s.countries), '按可用节点统计') +
     card('住宅(估算)', esc(s.residential_est), '数据中心 ' + esc(s.datacenter_est || 0)) +
     card('更新时间', '<small>' + esc(d.generated_at || '—') + '</small>');
+  const RANK = { residential: 0, datacenter: 1 };
+  const rank = function (t) { return RANK[t] != null ? RANK[t] : 2; };
   const list = Object.entries(d.countries || {}).map(function (x) {
-    const nodes = (x[1].nodes || []).filter(function (n) { return FILTER.gate === 'all' || n.residential === FILTER.gate; });
+    const nodes = (x[1].nodes || []).filter(function (n) { return FILTER.gate === 'all' || n.residential === FILTER.gate; })
+      .sort(function (a, b) { return rank(a.residential) - rank(b.residential); });
     return [x[0], { code: x[1].code, nodes: nodes }];
   }).filter(function (x) { return x[1].nodes.length > 0; })
     .sort(function (a, b) { return b[1].nodes.length - a[1].nodes.length; });

@@ -11,9 +11,10 @@ base="${base%/}"
 
 mkdir -p site
 
-FILES="pool.json pool.txt pool.yaml
+# 含 UUID 的 pool.txt/pool.yaml/gate.txt/gate.yaml 不在 Pages 上, 由私有 Worker 保存, 这里不恢复
+FILES="pool.json
 ovpn.json ovpn.yaml
-gate.json gate.txt gate.yaml gate-chains.txt gate-hosts.txt"
+gate.json gate-chains.txt gate-hosts.txt"
 
 for f in $FILES; do
   if curl -fsS --retry 2 --max-time 30 -o "site/$f.tmp" "$base/$f"; then

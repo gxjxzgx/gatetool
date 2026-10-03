@@ -1,0 +1,7 @@
+name = "openvp-subs"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[[kv_namespaces]]
+binding = "SUBS"
+id = "<填入你的 KV namespace id>"

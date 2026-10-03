@@ -1,7 +1,7 @@
 name: OpenVPN Refresh
 
 # VPN Gate OpenVPN 节点提取 + TCP 存活检查, 每 3 小时一次。
-# 输出 ovpn.yaml / ovpn.json 到站点根目录; 其余文件沿用线上旧版。
+# ovpn.yaml 上传到私有 Worker (不发布到 Pages); ovpn.json 发布到站点根目录; 其余文件沿用线上旧版。
 on:
   schedule:
     - cron: "10 */3 * * *"
@@ -47,6 +47,12 @@ jobs:
           OVPN_WORKERS: "32"
           OVPN_KEEP_UDP: "0"      # UDP 无法做 TCP 检查, 直接丢弃
         run: python refresh_ovpn.py
+
+      - name: Upload private subscriptions to Worker
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+        run: bash tools/upload_private.sh
 
       - uses: actions/configure-pages@v5
         with:

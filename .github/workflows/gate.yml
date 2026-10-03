@@ -1,8 +1,8 @@
 name: Gate SSTP Check
 
 # VPN Gate SSTP 节点检测 (经 Cloudflare Worker), 每 3 小时一次。
-# 输出 gate.json / gate.txt / gate.yaml / gate-chains.txt / gate-hosts.txt; 其余文件沿用线上旧版。
-# 住宅(ISP)节点 > 20 个时, 机房节点只进 gate.json (网页显示), 不进订阅/清单文件。
+# 输出 sstp.json / sstp.txt / sstp.yaml / sstp-chains.txt / sstp-hosts.txt; 其余文件沿用线上旧版。
+# 住宅(ISP)节点 > 20 个时, 机房节点只进 sstp.json (网页显示), 不进订阅/清单文件。
 on:
   schedule:
     - cron: "40 */3 * * *"
@@ -45,7 +45,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Check nodes and build gate.* files
+      - name: Check nodes and build sstp.* files
         env:
           PUBLIC_DIR: site
           CHECK_WORKER: "https://check.zx10.eu.cc/check?sstp=vpn:vpn@"
@@ -53,7 +53,7 @@ jobs:
           CHECK_TIMEOUT: "90"
           EDT_UUID: ${{ secrets.EDT_UUID }}
           EDT_DOMAIN: ${{ secrets.EDT_DOMAIN }}
-          SUB_URL: ${{ secrets.WORKER_URL }}/${{ secrets.ACCESS_TOKEN }}/gate.txt
+          SUB_URL: ${{ secrets.WORKER_URL }}/${{ secrets.ACCESS_TOKEN }}/sstp.txt
         run: python vpngate.py
 
       - name: Upload private subscriptions to Worker

@@ -5,8 +5,8 @@
 
 | 工作流 | 脚本 | 频率 | 输出 (站点根目录) |
 |---|---|---|---|
-| `gate.yml` | `vpngate.py` | 每 3 小时 | `gate.json` `gate.txt`(vless 订阅) `gate.yaml`(Clash) `gate-chains.txt` `gate-hosts.txt` |
-| `ovpn.yml` | `refresh_ovpn.py` | 每 3 小时 | `ovpn.json`(Pages) `ovpn.yaml`(Clash, 私有 Worker) |
+| `gate.yml` | `vpngate.py` | 每 3 小时 | `gate.json`(含机房节点) `gate.txt`(vless 订阅) `gate.yaml`(Clash) `gate-chains.txt` `gate-hosts.txt` (后四者在住宅节点 > 20 个时不含机房节点) |
+| `ovpn.yml` | `refresh_ovpn.py` | 每 3 小时 | `ovpn.json`(Pages, 含机房节点) `ovpn.yaml`(Clash, 私有 Worker; 住宅节点 > 20 个时不含机房节点) |
 | `pool.yml` | `refresh_pool.py` | 每天检查, 周日 11:00(北京)刷新 | `pool.json` `pool.txt`(vless 订阅) `pool.yaml`(Clash) |
 
 数据文件只在工作流运行时生成并发布到 Pages, 不提交到仓库。
@@ -14,7 +14,7 @@
 ## 站点
 
 `https://<用户>.github.io/<仓库>/` 打开 `index.html`, 一页显示三块: 优选池 / OpenVPN / SSTP。
-页面读取同目录的 `pool.json` `ovpn.json` `gate.json`。
+页面读取同目录的 `pool.json` `ovpn.json` `gate.json`。OpenVPN 与 SSTP 列表均按 住宅 → 机房 → 未识别 排序。
 
 ## 为什么每个工作流都先恢复站点
 

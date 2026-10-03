@@ -11,6 +11,9 @@ VPN Gate SSTP 节点检测流水线
      (单节点 HTTP 成功 != 节点可用; 以 Worker 返回 JSON 的 success 字段为准)
   5. 保留 success=true 的节点, 按国家分组, 生成 public/ 下的
      gate.json / gate.txt / gate.yaml / gate-chains.txt / gate-hosts.txt
+     - gate.json (网页) 含全部可用节点, 同国家内按 住宅 > 机房 > 未识别 排序
+     - 住宅(ISP)节点 > 20 个时, 机房节点只在网页(gate.json)显示, 不写入
+       gate.txt / gate.yaml / gate-chains.txt / gate-hosts.txt (GATE_MIN_ISP / GATE_EXCLUDE_DC 可调)
   6. 网页端 (GitHub Pages) 读取 gate.json 展示
 
 退出码:
@@ -440,17 +443,57 @@ def _sorted_countries(data):
     )
 
 
+# 类型排序: 住宅(ISP) -> 机房 -> 未识别
+TYPE_RANK = {"residential": 0, "datacenter": 1}
+
+
+def _type_rank(n):
+    return TYPE_RANK.get(n.get("residential"), 2)
+
+
 def _sorted_nodes(grp):
-    """住宅优先, 延迟升序。"""
+    """住宅 > 机房 > 未识别, 同类内延迟升序。"""
     return sorted(
         grp["nodes"],
         key=lambda n: (
-            0 if n.get("residential") == "residential" else 1,
+            _type_rank(n),
             n.get("latency_ms") is None,
             n.get("latency_ms") or 0,
             n.get("host") or "",
         ),
     )
+
+
+# 住宅(ISP)节点 > GATE_MIN_ISP 个时, 机房节点只在网页显示, 不进订阅/清单文件
+GATE_EXCLUDE_DC = os.environ.get("GATE_EXCLUDE_DC", "1") != "0"
+GATE_MIN_ISP = int(os.environ.get("GATE_MIN_ISP", "20"))
+
+
+def subscription_view(data):
+    """返回写订阅/清单文件用的数据视图: 满足条件时去掉机房节点 (gate.json 不受影响)。"""
+    isp_n = data["stats"]["residential_est"]
+    if not (GATE_EXCLUDE_DC and isp_n > GATE_MIN_ISP):
+        return data
+    countries = {}
+    for name, grp in data["countries"].items():
+        nodes = [n for n in grp["nodes"] if n.get("residential") != "datacenter"]
+        if not nodes:
+            continue
+        g = dict(grp)
+        g["nodes"] = nodes
+        g["count"] = len(nodes)
+        g["residential"] = sum(1 for n in nodes if n["residential"] == "residential")
+        g["datacenter"] = 0
+        countries[name] = g
+    return {**data, "countries": countries}
+
+
+_TYPE_GROUPS = (("住宅", "residential"), ("机房", "datacenter"), ("未识别", "unknown"))
+
+
+def _type_name(n):
+    t = n.get("residential")
+    return t if t in ("residential", "datacenter") else "unknown"
 
 
 def build_chains_text(data):
@@ -473,14 +516,11 @@ def build_chains_text(data):
         nodes = _sorted_nodes(grp)
         lines.append("")
         lines.append(
-            f"# ---- {zh} {code} · {grp['count']} 节点 (住宅 {grp['residential']} / 机房 {grp['datacenter']}) ----"
+            f"# ---- {zh} {code} · {grp['count']} 节点 (住宅 {grp['residential']} / 机房 {grp['datacenter']} / 未识别 {grp['count'] - grp['residential'] - grp['datacenter']}) ----"
         )
-        res_nodes = [n for n in nodes if n.get("residential") == "residential"]
-        dc_nodes = [n for n in nodes if n.get("residential") != "residential"]
-        for i, n in enumerate(res_nodes, 1):
-            lines.append(f"{zh}-住宅-{i:02d}-sstp$sstp://vpn:vpn@{n['host']}:{n['port']}")
-        for i, n in enumerate(dc_nodes, 1):
-            lines.append(f"{zh}-机房-{i:02d}-sstp$sstp://vpn:vpn@{n['host']}:{n['port']}")
+        for label, kind in _TYPE_GROUPS:
+            for i, n in enumerate([x for x in nodes if _type_name(x) == kind], 1):
+                lines.append(f"{zh}-{label}-{i:02d}-sstp$sstp://vpn:vpn@{n['host']}:{n['port']}")
     return "\n".join(lines) + "\n"
 
 
@@ -547,18 +587,13 @@ def build_hosts_text(data):
         nodes = _sorted_nodes(grp)
         lines.append("")
         lines.append(
-            f"# ---- {zh} {code} · {grp['count']} 节点 (住宅 {grp['residential']} / 机房 {grp['datacenter']}) ----"
+            f"# ---- {zh} {code} · {grp['count']} 节点 (住宅 {grp['residential']} / 机房 {grp['datacenter']} / 未识别 {grp['count'] - grp['residential'] - grp['datacenter']}) ----"
         )
-        res_nodes = [n for n in nodes if n.get("residential") == "residential"]
-        dc_nodes = [n for n in nodes if n.get("residential") != "residential"]
-        for i, n in enumerate(res_nodes, 1):
-            entry = edge[idx % len(edge)]
-            idx += 1
-            lines.append(f"{entry}#{zh}-住宅-{i:02d}-sstp$sstp://vpn:vpn@{n['host']}:{n['port']}")
-        for i, n in enumerate(dc_nodes, 1):
-            entry = edge[idx % len(edge)]
-            idx += 1
-            lines.append(f"{entry}#{zh}-机房-{i:02d}-sstp$sstp://vpn:vpn@{n['host']}:{n['port']}")
+        for label, kind in _TYPE_GROUPS:
+            for i, n in enumerate([x for x in nodes if _type_name(x) == kind], 1):
+                entry = edge[idx % len(edge)]
+                idx += 1
+                lines.append(f"{entry}#{zh}-{label}-{i:02d}-sstp$sstp://vpn:vpn@{n['host']}:{n['port']}")
     return "\n".join(lines) + "\n"
 
 
@@ -710,12 +745,13 @@ def write_outputs(data):
         os.replace(tmp, path)
         return path
 
+    sub = subscription_view(data)   # 住宅 > 20 时去掉机房节点, 只给网页(gate.json)看
     return (
-        put("gate.json"),                                 # 监控页数据
-        put("gate-chains.txt", build_chains_text(data)),  # edgetunnel 链式代理清单
-        put("gate-hosts.txt", build_hosts_text(data)),    # 「自定义优选IP」清单
-        put("gate.txt", build_sub_text(data)),            # 完整 vless:// 订阅
-        put("gate.yaml", build_clash_text(data)),         # Clash / Mihomo / FlClash 配置
+        put("gate.json"),                                 # 监控页数据 (全部可用节点)
+        put("gate-chains.txt", build_chains_text(sub)),   # edgetunnel 链式代理清单
+        put("gate-hosts.txt", build_hosts_text(sub)),     # 「自定义优选IP」清单
+        put("gate.txt", build_sub_text(sub)),             # 完整 vless:// 订阅
+        put("gate.yaml", build_clash_text(sub)),          # Clash / Mihomo / FlClash 配置
     )
 
 
@@ -765,6 +801,11 @@ def main():
     log("RESULT", f"可用节点: {len(success)}")
     log("RESULT", f"国家数量: {data['stats']['countries']}")
 
+    st = data["stats"]
+    if GATE_EXCLUDE_DC and st["residential_est"] > GATE_MIN_ISP:
+        log("RESULT", f"住宅 {st['residential_est']} 个 (> {GATE_MIN_ISP}): 机房 {st['datacenter_est']} 个只在网页显示, 不写入订阅/清单")
+    else:
+        log("RESULT", f"住宅 {st['residential_est']} 个 (未超过 {GATE_MIN_ISP}) 或未启用排除: 机房 {st['datacenter_est']} 个一并写入订阅/清单")
     paths = write_outputs(data)
     for p in paths:
         log("WEBSITE", f"生成 {os.path.relpath(p, REPO_DIR)}")

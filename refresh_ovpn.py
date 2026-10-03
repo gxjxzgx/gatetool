@@ -6,18 +6,18 @@ VPN Gate OpenVPN 节点自动提取。
 数据源 : http://www.vpngate.net/api/iphone/ (官方 CSV, 含 OpenVPN 配置 base64)
 流程   : 拉取 API -> 解码每个服务器的 OpenVPN 配置 -> 提取 remote 地址/端口/协议
           -> 并发 TCP 检查端口可达性
-          -> 家宽(ISP)节点够多时剔除数据中心节点, 不够则连数据中心一起输出
-          -> 生成 ovpn.yaml (Clash 订阅) + ovpn.json (监控页数据)
+          -> 监控页(ovpn.json)显示全部可用节点, 按 住宅(ISP) > 机房 > 未识别 排序
+          -> 家宽(ISP)节点 > 20 个时, 机房节点不写入 ovpn.yaml (只在监控页显示); 否则一并写入
 
 只用标准库, 无第三方依赖。
 
 环境变量:
   OVPN_CHECK_TIMEOUT  选填, 单节点 TCP 检查超时秒数, 默认 5
   OVPN_WORKERS        选填, 并发线程数, 默认 32
-  OVPN_MAX            选填, 最多保留 N 个 (0 = 全部), 默认 0 (按延迟优先截断)
+  OVPN_MAX            选填, ovpn.yaml 最多保留 N 个 (0 = 全部), 默认 0 (按延迟优先截断); 监控页仍显示全部
   OVPN_KEEP_UDP       选填, UDP 节点无法做 TCP 检查, 1=不检查直接保留, 0=丢弃, 默认 1
-  OVPN_EXCLUDE_DC     选填, 1=ISP 节点足够时不输出数据中心节点 (public-vpn 前缀), 0=始终保留, 默认 1
-  OVPN_MIN_ISP        选填, ISP(家宽) 节点数 > 此值才剔除数据中心; 否则数据中心一并输出, 默认 20
+  OVPN_EXCLUDE_DC     选填, 1=ISP 节点足够时 ovpn.yaml 不含机房节点 (public-vpn 前缀, 仍在监控页显示), 0=始终写入, 默认 1
+  OVPN_MIN_ISP        选填, ISP(家宽) 节点数 > 此值才把机房节点排除出 ovpn.yaml; 否则一并写入, 默认 20
   OUT_DIR             选填, 输出目录, 默认脚本所在目录
   VPNGATE_API         选填, 官方 API 地址
   VPNGATE_MIRROR      选填, 官方失败时的回退镜像
@@ -210,8 +210,20 @@ def check_nodes(nodes, timeout, workers, keep_udp=True):
     return alive
 
 
+# 同一国家内的排序: 住宅(ISP) -> 机房 -> 未识别
+TYPE_RANK = {"residential": 0, "datacenter": 1, "unknown": 2}
+
+
 def sort_by_country(nodes):
-    return sorted(nodes, key=lambda n: (n["country_short"], n["remote_host"], n["remote_port"]))
+    return sorted(
+        nodes,
+        key=lambda n: (
+            n["country_short"],
+            TYPE_RANK[classify_ip_type(n.get("vg_host", ""))],
+            n["remote_host"],
+            n["remote_port"],
+        ),
+    )
 
 
 def classify_ip_type(vg_host):
@@ -306,11 +318,11 @@ def write_clash_yaml(nodes, out_dir):
     return path
 
 
-def write_outputs(nodes, out_dir, checked=None):
-    """只生成 ovpn.yaml (订阅) + ovpn.json (监控页数据)。"""
+def write_outputs(nodes, out_dir, checked=None, yaml_nodes=None):
+    """生成 ovpn.yaml (订阅, 用 yaml_nodes) + ovpn.json (监控页数据, 用全部 nodes)。"""
     os.makedirs(out_dir, exist_ok=True)
     now = datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M")
-    yaml_path = write_clash_yaml(nodes, out_dir)
+    yaml_path = write_clash_yaml(nodes if yaml_nodes is None else yaml_nodes, out_dir)
     # 监控页用的结构化数据
     countries = {}
     for n in nodes:
@@ -367,21 +379,24 @@ def main():
     log(f"保留: {len(alive)}/{len(nodes)} (含未检查的 UDP 节点)" if keep_udp else f"可达: {len(alive)}/{len(nodes)}")
     isp_n = sum(1 for n in alive if classify_ip_type(n.get("vg_host", "")) == "residential")
     dc_n = sum(1 for n in alive if classify_ip_type(n.get("vg_host", "")) == "datacenter")
-    if exclude_dc and isp_n > min_isp:
-        alive = [n for n in alive if classify_ip_type(n.get("vg_host", "")) != "datacenter"]
-        log(f"ISP(家宽) 节点 {isp_n} 个 (> {min_isp}), 剔除数据中心节点 {dc_n} 个, 输出 {len(alive)} 个")
-    else:
-        log(f"ISP(家宽) 节点 {isp_n} 个 (未超过 {min_isp}) 或未启用剔除, 数据中心节点 {dc_n} 个一并输出, 共 {len(alive)} 个")
     if not alive:
         die("检查后剩余 0 个可用节点, 拒绝提交空结果")
+    # 监控页显示全部可用节点; ovpn.yaml 在 ISP 节点够多时不含机房节点
+    if exclude_dc and isp_n > min_isp:
+        yaml_nodes = [n for n in alive if classify_ip_type(n.get("vg_host", "")) != "datacenter"]
+        log(f"ISP(家宽) 节点 {isp_n} 个 (> {min_isp}): 机房节点 {dc_n} 个只在监控页显示, 不写入 ovpn.yaml ({len(yaml_nodes)} 个写入)")
+    else:
+        yaml_nodes = list(alive)
+        log(f"ISP(家宽) 节点 {isp_n} 个 (未超过 {min_isp}) 或未启用排除, 机房节点 {dc_n} 个一并写入 ovpn.yaml")
     if max_n > 0:
-        # 先按延迟截断 (UDP 无延迟排最后), 再回到按国家排序
-        alive.sort(key=lambda n: (n.get("latency_ms") is None, n.get("latency_ms") or 0))
-        alive = alive[:max_n]
+        # 只截断订阅: 先按延迟 (UDP 无延迟排最后), 再回到按国家/类型排序
+        yaml_nodes.sort(key=lambda n: (n.get("latency_ms") is None, n.get("latency_ms") or 0))
+        yaml_nodes = yaml_nodes[:max_n]
     alive = sort_by_country(alive)
+    yaml_nodes = sort_by_country(yaml_nodes)
 
-    yaml_path, json_path = write_outputs(alive, out_dir, checked=len(nodes))
-    log(f"已写入 {yaml_path} / {json_path} ({len(alive)} 个节点)")
+    yaml_path, json_path = write_outputs(alive, out_dir, checked=len(nodes), yaml_nodes=yaml_nodes)
+    log(f"已写入 {yaml_path} ({len(yaml_nodes)} 个节点) / {json_path} ({len(alive)} 个节点)")
 
 
 if __name__ == "__main__":

@@ -52,7 +52,14 @@ jobs:
           CHECK_TIMEOUT: "90"
           EDT_UUID: ${{ secrets.EDT_UUID }}
           EDT_DOMAIN: ${{ secrets.EDT_DOMAIN }}
+          SUB_URL: ${{ secrets.WORKER_URL }}/${{ secrets.ACCESS_TOKEN }}/gate.txt
         run: python vpngate.py
+
+      - name: Upload private subscriptions to Worker
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          UPLOAD_KEY: ${{ secrets.UPLOAD_KEY }}
+        run: bash tools/upload_private.sh
 
       - uses: actions/configure-pages@v5
         with:

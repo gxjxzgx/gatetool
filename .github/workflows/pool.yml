@@ -72,6 +72,13 @@ jobs:
           SAMPLE_SIZE: "350"
         run: python refresh_pool.py
 
+      - name: Upload private subscriptions to Worker
+        if: steps.need.outputs.run == 'true'
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          UPLOAD_KEY: ${{ secrets.UPLOAD_KEY }}
+        run: bash tools/upload_private.sh
+
       - uses: actions/configure-pages@v5
         if: steps.need.outputs.run == 'true'
         with:

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cloudflare · 节点监控</title>
+<style>
+  :root {
+    --bg: #0b1120; --panel: #111a2e; --panel2: #16233c; --border: #243450;
+    --text: #dbe7ff; --muted: #7f93b8; --accent: #4cc2ff; --ok: #2fd08a;
+    --warn: #ffb84d; --res: #b48cff; --dc: #ffb84d; --unk: #8a9bb5;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; min-height: 100vh; padding: 20px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  h2 { font-size: 17px; margin: 26px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .card .k { color: var(--muted); font-size: 12px; }
+  .card .v { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .card .v small { font-size: 13px; font-weight: 400; color: var(--muted); }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .links a { background: var(--panel2); border: 1px solid var(--border); color: var(--accent); border-radius: 999px; padding: 6px 14px; font-size: 13px; text-decoration: none; }
+  .links a:hover { border-color: var(--accent); }
+  .qlinks { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 6px 16px; }
+  .qrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 0; border-top: 1px solid var(--border); }
+  .qrow:first-child { border-top: none; }
+  .qk { color: var(--muted); font-size: 13px; min-width: 110px; }
+  .qrow .links { margin-bottom: 0; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
+  .pill { background: var(--panel2); border: 1px solid var(--border); color: var(--text); border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer; user-select: none; }
+  .pill.on { border-color: var(--accent); color: var(--accent); }
+  .legend { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+  .country { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+  .country .head { display: flex; justify-content: space-between; padding: 12px 16px; background: var(--panel2); font-weight: 600; cursor: pointer; flex-wrap: wrap; gap: 6px; }
+  .country .head .tag { font-size: 12px; color: var(--muted); font-weight: 400; }
+  td .tag { font-size: 11px; color: var(--muted); }
+  .country table { display: none; }
+  .country.open table { display: table; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 9px 12px; text-align: left; border-top: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  tr:hover td { background: rgba(76,194,255,.05); }
+  .lat { color: var(--ok); font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; }
+  .b-res { background: rgba(180,140,255,.15); color: var(--res); }
+  .b-dc { background: rgba(255,184,77,.15); color: var(--dc); }
+  .b-unk { background: rgba(138,155,181,.15); color: var(--unk); }
+  code.copy { cursor: pointer; }
+  code.copy:hover { outline: 1px solid var(--accent); }
+  .proto-tcp { color: var(--accent); }
+  .proto-udp { color: var(--warn); }
+  .note { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+  .empty { color: var(--muted); padding: 30px; text-align: center; }
+  .footer { color: var(--muted); font-size: 12px; margin-top: 24px; text-align: center; }
+  code { font-family: Consolas, monospace; background: var(--panel2); padding: 2px 6px; border-radius: 5px; font-size: 12px; }
+  .pool-table { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 6px; }
+  @media (max-width: 700px) { th, td { padding: 7px 8px; } .hide-m { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Cloudflare · 节点监控</h1>
+  <div class="sub">Cloudflare 优选池 + VPN Gate OpenVPN + VPN Gate SSTP，三个 GitHub Actions 工作流分别定时刷新</div>
+
+  <h2>☁️ Cloudflare 优选池 <small style="color:var(--muted);font-weight:400">pool</small></h2>
+  <div class="cards" id="pool-cards"></div>
+  <div class="note">延迟最低的前 10 个入口：</div>
+  <div class="pool-table"><table>
+    <thead><tr><th>#</th><th>IP</th><th>端口</th><th>延迟</th></tr></thead>
+    <tbody id="pool-top"></tbody>
+  </table></div>
+
+  <h2>🔒 OpenVPN 节点 <small style="color:var(--muted);font-weight:400">ovpn</small></h2>
+  <div class="cards" id="ovpn-cards"></div>
+  <div class="bar" data-s="ovpn">
+    <span class="pill on" data-f="all">全部</span>
+    <span class="pill" data-f="residential">住宅 IP</span>
+    <span class="pill" data-f="datacenter">数据中心</span>
+    <span class="pill" data-f="unknown">未识别</span>
+  </div>
+  <div class="legend">「住宅 / 数据中心」按 VPN Gate 主机名前缀估算（vpn+数字→住宅，public-vpn→机房），非严格判定。</div>
+  <div id="ovpn-countries"></div>
+
+  <h2>🛰 SSTP 节点检测 <small style="color:var(--muted);font-weight:400">gate</small></h2>
+  <div class="cards" id="gate-cards"></div>
+  <div class="bar" data-s="gate">
+    <span class="pill on" data-f="all">全部</span>
+    <span class="pill" data-f="residential">住宅 IP</span>
+    <span class="pill" data-f="datacenter">数据中心</span>
+    <span class="pill" data-f="unknown">未识别</span>
+  </div>
+  <div class="legend">节点来自 VPN Gate（仅 TCP 入口中继），由 Cloudflare Worker 检测；「住宅 / 数据中心」为基于出口信息的估算。点击 host:port 复制 sstp 链接。</div>
+  <div id="gate-countries"></div>
+
+  <div class="footer" id="foot">加载中…</div>
+
+  <h2>🔗 快速访问</h2>
+  <div class="qlinks">
+    <div class="qrow"><span class="qk">pool · 优选池</span><span class="links">
+      <a href="pool.txt">pool.txt（订阅）</a>
+      <a href="pool.yaml">pool.yaml（Clash）</a>
+      <a href="pool.json">pool.json</a>
+    </span></div>
+    <div class="qrow"><span class="qk">ovpn · OpenVPN</span><span class="links">
+      <a href="ovpn.yaml">ovpn.yaml（Clash）</a>
+      <a href="ovpn.json">ovpn.json</a>
+    </span></div>
+    <div class="qrow"><span class="qk">gate · SSTP</span><span class="links">
+      <a href="gate.txt">gate.txt（vless 订阅）</a>
+      <a href="gate.yaml">gate.yaml（Clash）</a>
+      <a href="gate-chains.txt">gate-chains.txt</a>
+      <a href="gate-hosts.txt">gate-hosts.txt</a>
+      <a href="gate.json">gate.json</a>
+    </span></div>
+  </div>
+</div>
+
+<script>
+let POOL = null, OVPN = null, GATE = null;
+const FILTER = { ovpn: 'all', gate: 'all' };
+
+const ZH = {
+  'Japan': '日本', 'Korea Republic of': '韩国', 'Korea': '韩国',
+  'United States': '美国', 'Thailand': '泰国', 'Russian Federation': '俄罗斯',
+  'Russia': '俄罗斯', 'United Kingdom': '英国', 'Australia': '澳大利亚',
+  'Romania': '罗马尼亚', 'Canada': '加拿大', 'Viet Nam': '越南', 'Vietnam': '越南',
+  'Finland': '芬兰', 'Grenada': '格林纳达', 'China': '中国', 'Myanmar': '缅甸',
+  'Germany': '德国', 'France': '法国', 'Netherlands': '荷兰', 'Singapore': '新加坡',
+  'Hong Kong': '香港', 'Taiwan': '台湾', 'India': '印度', 'Brazil': '巴西',
+  'Italy': '意大利', 'Spain': '西班牙', 'Sweden': '瑞典', 'Norway': '挪威',
+  'Poland': '波兰', 'Ukraine': '乌克兰', 'Turkey': '土耳其', 'Turkiye': '土耳其',
+  'Indonesia': '印度尼西亚', 'Malaysia': '马来西亚', 'Philippines': '菲律宾',
+  'Mexico': '墨西哥', 'Argentina': '阿根廷', 'Chile': '智利', 'Colombia': '哥伦比亚',
+  'South Africa': '南非', 'Egypt': '埃及', 'Israel': '以色列',
+  'United Arab Emirates': '阿联酋', 'Saudi Arabia': '沙特阿拉伯',
+  'Pakistan': '巴基斯坦', 'Bangladesh': '孟加拉国', 'Nepal': '尼泊尔',
+  'Sri Lanka': '斯里兰卡', 'Cambodia': '柬埔寨', 'Laos': '老挝', 'Mongolia': '蒙古',
+  'Kazakhstan': '哈萨克斯坦', 'Belarus': '白俄罗斯', 'Moldova': '摩尔多瓦',
+  'Lithuania': '立陶宛', 'Latvia': '拉脱维亚', 'Estonia': '爱沙尼亚',
+  'Czech Republic': '捷克', 'Czechia': '捷克', 'Slovakia': '斯洛伐克',
+  'Hungary': '匈牙利', 'Austria': '奥地利', 'Switzerland': '瑞士',
+  'Belgium': '比利时', 'Ireland': '爱尔兰', 'Portugal': '葡萄牙', 'Greece': '希腊',
+  'Denmark': '丹麦', 'New Zealand': '新西兰', 'Serbia': '塞尔维亚',
+  'Croatia': '克罗地亚', 'Bulgaria': '保加利亚', 'Albania': '阿尔巴尼亚'
+};
+function esc(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function zhCountry(en) { return esc(ZH[en] || en); }
+
+function card(k, v, sub) {
+  return '<div class="card"><div class="k">' + k + '</div><div class="v">' + v + '</div>' +
+    (sub ? '<div class="k">' + sub + '</div>' : '') + '</div>';
+}
+function badge(t) {
+  if (t === 'residential') return '<span class="badge b-res">住宅</span>';
+  if (t === 'datacenter') return '<span class="badge b-dc">机房</span>';
+  return '<span class="badge b-unk">未识别</span>';
+}
+function latCell(ms) {
+  return ms != null ? '<td class="lat">' + esc(ms) + ' ms</td>' : '<td style="color:var(--muted)">未检查</td>';
+}
+// 国家分组卡片 (ovpn / gate 共用): groups = [[name, {code, nodes}], ...]; rowFn(node) -> <tr>; head = <thead> 内容
+function countryBlocks(groups, typeOf, rowFn, head, emptyMsg) {
+  if (!groups.length) return '<div class="country"><div class="empty">' + emptyMsg + '</div></div>';
+  return groups.map(function (x, ci) {
+    const name = x[0], g = x[1];
+    const res = g.nodes.filter(function (n) { return typeOf(n) === 'residential'; }).length;
+    const dc = g.nodes.filter(function (n) { return typeOf(n) === 'datacenter'; }).length;
+    return '<div class="country' + (ci === 0 ? ' open' : '') + '">' +
+      '<div class="head"><span>🌏 ' + zhCountry(name) + ' <span class="tag">' + esc(g.code || '') + '</span></span>' +
+      '<span class="tag">' + g.nodes.length + ' 个节点 · 住宅 ' + res + ' · 机房 ' + dc + '</span></div>' +
+      '<table><thead><tr>' + head + '</tr></thead><tbody>' + g.nodes.map(rowFn).join('') + '</tbody></table></div>';
+  }).join('');
+}
+
+function renderPool() {
+  const d = POOL;
+  if (!d) { document.getElementById('pool-cards').innerHTML = '<div class="empty">优选池数据加载失败</div>'; return; }
+  const es = d.entries || [];
+  document.getElementById('pool-cards').innerHTML =
+    card('池子 IP 数', es.length) + card('采样数', d.sampled || '—') + card('可用数', d.reachable || '—') +
+    card('更新时间', '<small>' + esc(d.updated_at || '—') + '</small>');
+  document.getElementById('pool-top').innerHTML = es.slice(0, 10).map(function (e, i) {
+    return '<tr><td>' + (i + 1) + '</td><td><code>' + esc(e.ip) + '</code></td><td>' + esc(e.port) + '</td>' +
+      '<td class="lat">' + esc(e.latency_ms) + ' ms</td></tr>';
+  }).join('') || '<tr><td colspan="4" class="empty">暂无数据</td></tr>';
+}
+
+function renderOvpn() {
+  const d = OVPN, box = document.getElementById('ovpn-countries');
+  if (!d) { document.getElementById('ovpn-cards').innerHTML = '<div class="empty">OpenVPN 数据加载失败</div>'; box.innerHTML = ''; return; }
+  const es = d.entries || [];
+  const res = es.filter(function (e) { return e.ip_type === 'residential'; }).length;
+  const dc = es.filter(function (e) { return e.ip_type === 'datacenter'; }).length;
+  document.getElementById('ovpn-cards').innerHTML =
+    card('节点数量', d.checked || es.length) + card('可用数量', d.total || es.length) +
+    card('国家数量', Object.keys(d.countries || {}).length) + card('住宅 / 机房 (估算)', res, '机房 ' + dc) +
+    card('更新时间', '<small>' + esc(d.updated_at || '—') + '</small>');
+  const groups = {};
+  es.forEach(function (e) {
+    if (FILTER.ovpn !== 'all' && e.ip_type !== FILTER.ovpn) return;
+    const k = e.country_long || 'Unknown';
+    groups[k] = groups[k] || { code: e.country_short, nodes: [] };
+    groups[k].nodes.push(e);
+  });
+  const list = Object.entries(groups).sort(function (a, b) { return b[1].nodes.length - a[1].nodes.length; });
+  box.innerHTML = countryBlocks(list, function (n) { return n.ip_type; }, function (e) {
+    const proto = e.proto === 'tcp' ? 'tcp' : 'udp';
+    return '<tr><td><code>' + esc(e.host) + ':' + esc(e.port) + '</code></td>' +
+      '<td class="proto-' + proto + '">openvpn/' + proto + '</td>' + latCell(e.latency_ms) +
+      '<td>' + badge(e.ip_type) + '</td></tr>';
+  }, '<th>地址</th><th>协议</th><th>延迟</th><th>类型</th>', '没有符合当前筛选的节点');
+}
+
+function renderGate() {
+  const d = GATE, box = document.getElementById('gate-countries');
+  if (!d) { document.getElementById('gate-cards').innerHTML = '<div class="empty">SSTP 数据加载失败</div>'; box.innerHTML = ''; return; }
+  const s = d.stats || {};
+  document.getElementById('gate-cards').innerHTML =
+    card('SSTP 节点', esc(s.sstp_nodes), '筛选自 VPN Gate') + card('已检测', esc(s.checked), '提交给 Worker') +
+    card('可用节点', esc(s.success), 'success = true') + card('国家数量', esc(s.countries), '按可用节点统计') +
+    card('住宅(估算)', esc(s.residential_est), '数据中心 ' + esc(s.datacenter_est || 0)) +
+    card('更新时间', '<small>' + esc(d.generated_at || '—') + '</small>');
+  const list = Object.entries(d.countries || {}).map(function (x) {
+    const nodes = (x[1].nodes || []).filter(function (n) { return FILTER.gate === 'all' || n.residential === FILTER.gate; });
+    return [x[0], { code: x[1].code, nodes: nodes }];
+  }).filter(function (x) { return x[1].nodes.length > 0; })
+    .sort(function (a, b) { return b[1].nodes.length - a[1].nodes.length; });
+  box.innerHTML = countryBlocks(list, function (n) { return n.residential; }, function (n) {
+    const exit = n.exit ? esc(n.exit.ip || '?') + ' · ' + esc(n.exit.org || n.exit.country || '') : '-';
+    return '<tr><td><code class="copy" title="点击复制 sstp 链接">' + esc(n.host) + ':' + esc(n.port) + '</code></td>' +
+      '<td class="hide-m">' + esc(n.country_code || '') + '</td><td>SSTP</td>' +
+      (n.latency_ms != null ? '<td class="lat">' + esc(n.latency_ms) + ' ms</td>' : '<td>-</td>') +
+      '<td class="hide-m" style="color:var(--muted)">' + exit + '</td><td>' + badge(n.residential) + '</td>' +
+      '<td class="hide-m" style="color:var(--muted)">' + esc((n.checked_at || '').split(' ')[0]) + '</td></tr>';
+  }, '<th>Host:Port</th><th class="hide-m">国码</th><th>协议</th><th>延迟</th><th class="hide-m">出口</th><th>类型</th><th class="hide-m">检测日期</th>',
+  '没有符合当前筛选的可用节点（本轮 Worker 判定全部不可用或无数据）');
+}
+
+// 交互: 过滤标签 / 展开国家 / 点击复制 sstp 链接
+document.addEventListener('click', function (e) {
+  const pill = e.target.closest('.pill');
+  if (pill) {
+    const bar = pill.closest('.bar'), s = bar.dataset.s;
+    FILTER[s] = pill.dataset.f;
+    bar.querySelectorAll('.pill').forEach(function (p) { p.classList.toggle('on', p === pill); });
+    if (s === 'ovpn') renderOvpn(); else renderGate();
+    return;
+  }
+  const head = e.target.closest('.country .head');
+  if (head) { head.parentElement.classList.toggle('open'); return; }
+  const code = e.target.closest('code.copy');
+  if (code) {
+    const m = code.textContent.match(/(.+):(\d+)$/);
+    if (m && navigator.clipboard) navigator.clipboard.writeText('sstp://vpn:vpn@' + m[1] + ':' + m[2]);
+  }
+});
+
+async function getJson(name) {
+  try {
+    const r = await fetch(name, { cache: 'no-store' });
+    return r.ok ? await r.json() : null;
+  } catch (e) { return null; }
+}
+
+async function load() {
+  const res = await Promise.all([getJson('pool.json'), getJson('ovpn.json'), getJson('gate.json')]);
+  POOL = res[0]; OVPN = res[1]; GATE = res[2];
+  renderPool(); renderOvpn(); renderGate();
+  document.getElementById('foot').textContent =
+    '优选池 ' + (POOL ? POOL.updated_at : '?') + ' · OpenVPN ' + (OVPN ? OVPN.updated_at : '?') +
+    ' · SSTP ' + (GATE ? GATE.generated_at : '?') + '（北京时间）';
+}
+load();
+setInterval(load, 300000);
+</script>
+</body>
+</html>

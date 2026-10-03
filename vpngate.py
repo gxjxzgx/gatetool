@@ -455,15 +455,15 @@ def _sorted_nodes(grp):
 
 def build_chains_text(data):
     """生成 edgetunnel 链式代理清单: 按国家分组, 每国编号固定, 住宅优先, 延迟升序。
-    每行 = 「名字 + $sstp://vpn:vpn@host:port」, 名字不变, 指令每 30 分钟自动换。"""
+    每行 = 「名字 + $sstp://vpn:vpn@host:port」, 名字不变, 指令每 3 小时自动换。"""
     lines = [
         "# VPN Gate SSTP 节点 -> edgetunnel 链式代理清单",
-        f"# 自动更新: {data['generated_at']} (每 30 分钟重新检测)",
+        f"# 自动更新: {data['generated_at']} (每 3 小时重新检测)",
         f"# 固定地址: {CHAIN_URL}",
         "#",
         "# 用法: 在 edgetunnel 节点备注里直接粘贴下面任意一行 (名字与指令连写)",
         "# 例: 日本-住宅-01$sstp://vpn:vpn@vpnxxx.opengw.net:443",
-        "# 名字保持不变, 只有 $sstp:// 后面的地址每 30 分钟自动更换",
+        "# 名字保持不变, 只有 $sstp:// 后面的地址每 3 小时自动更换",
         "# 账号密码固定 vpn:vpn ; 端口必须保留",
         "# ========================================================",
     ]
@@ -524,19 +524,19 @@ HOSTS_URL = os.environ.get("HOSTS_URL", _site_file("gate-hosts.txt"))
 
 def build_hosts_text(data):
     """生成可直接粘贴到 edgetunnel 后台「自定义优选IP」框的清单。
-    每行 = 入口地址#名字$sstp://... ; 名字固定, 底下 SSTP 节点每 30 分钟自动换。"""
+    每行 = 入口地址#名字$sstp://... ; 名字固定, 底下 SSTP 节点每 3 小时自动换。"""
     # 入口: 默认循环使用 EDGE_HOSTS; 可用 HOSTS_ENTRY 覆盖(逗号分隔)
     _entry = os.environ.get("HOSTS_ENTRY", "").strip()
     edge = [e.strip() for e in _entry.split(",") if e.strip()] or EDGE_HOSTS or [f"{EDT_DOMAIN}:443"]
 
     lines = [
         "# edgetunnel「自定义优选IP」清单 (整段复制, 追加到后台现有内容后面)",
-        f"# 自动更新: {data['generated_at']} (每 30 分钟重新检测)",
+        f"# 自动更新: {data['generated_at']} (每 3 小时重新检测)",
         f"# 固定地址: {HOSTS_URL}",
         "# 每行 = 入口地址#名字$sstp://vpn:vpn@节点:端口",
         "# 入口循环分配",
         "# 名字 = 国家-住宅/机房-编号, 直接区分住宅与机房",
-        "# 名字固定; 只有 $sstp:// 后面的节点地址每 30 分钟自动更换",
+        "# 名字固定; 只有 $sstp:// 后面的节点地址每 3 小时自动更换",
         "# 账号密码固定 vpn:vpn ; 节点端口必须保留",
         "# ========================================================",
     ]
@@ -613,10 +613,10 @@ def build_sub_text(data):
     填进 edgetunnel 后台「订阅链接」URL, 客户端定时拉取即可自动轮换。"""
     lines = [
         "# edgetunnel 完整订阅 (vless://) —— 填进后台「订阅链接」URL",
-        f"# 自动更新: {data['generated_at']} (每 30 分钟重新检测)",
+        f"# 自动更新: {data['generated_at']} (每 3 小时重新检测)",
         f"# 固定地址: {SUB_URL}",
         f"# 节点域名: {EDT_DOMAIN} (传输 ws / TLS / fingerprint {EDT_FINGERPRINT})",
-        "# 名字固定; $sstp:// 链式代理(编码在 path)每 30 分钟自动更换",
+        "# 名字固定; $sstp:// 链式代理(编码在 path)每 3 小时自动更换",
         "# 账号密码固定 vpn:vpn ; 节点端口已编码进 path",
         "# ========================================================",
     ]
@@ -677,7 +677,7 @@ def build_clash_text(data):
     main = {"name": "PROXY", "type": "select", "proxies": ["自动"] + names + ["DIRECT"]}
 
     lines = [
-        f"# 自动更新: {data['generated_at']} (每 30 分钟重新检测)",
+        f"# 自动更新: {data['generated_at']} (每 3 小时重新检测)",
         "mixed-port: 7890",
         "mode: rule",
         "log-level: info",

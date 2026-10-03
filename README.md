@@ -5,8 +5,8 @@
 
 | 工作流 | 脚本 | 频率 | 输出 (站点根目录) |
 |---|---|---|---|
-| `gate.yml` | `vpngate.py` | 每 30 分钟 | `gate.json` `gate.txt`(vless 订阅) `gate.yaml`(Clash) `gate-chains.txt` `gate-hosts.txt` |
-| `ovpn.yml` | `refresh_ovpn.py` | 每 3 小时 | `ovpn.json` `ovpn.yaml` |
+| `gate.yml` | `vpngate.py` | 每 3 小时 | `gate.json` `gate.txt`(vless 订阅) `gate.yaml`(Clash) `gate-chains.txt` `gate-hosts.txt` |
+| `ovpn.yml` | `refresh_ovpn.py` | 每 3 小时 | `ovpn.json`(Pages) `ovpn.yaml`(Clash, 私有 Worker) |
 | `pool.yml` | `refresh_pool.py` | 每天检查, 周日 11:00(北京)刷新 | `pool.json` `pool.txt`(vless 订阅) `pool.yaml`(Clash) |
 
 数据文件只在工作流运行时生成并发布到 Pages, 不提交到仓库。
@@ -34,18 +34,21 @@ Pages 每次部署都是整站替换。每个工作流开头运行 `tools/prepar
 
 ## 方案 B: 订阅放私有 Worker (不进 Pages / Actions 产物)
 
-含 UUID 的 4 个文件由工作流上传到你自己的 Cloudflare Worker (KV), 站点上不发布。
+含 UUID 的 4 个文件以及 `ovpn.yaml` 由工作流上传到你自己的 Cloudflare Worker (KV), 站点上不发布。
 
 1. **先在 edgetunnel 后台换一个新 UUID**, 同步更新 secret `EDT_UUID`。
 2. Cloudflare 控制台: 新建 KV 命名空间, 记下 id, 填进 `worker/wrangler.toml`
    (或在 Worker 设置里绑定, 绑定名必须是 `SUBS`)。
 3. 部署 `worker/worker.js` 为一个 Worker (控制台粘贴代码即可), 并绑定自定义域名
    (国内直连 workers.dev 常常不通, 建议用你自己的域名)。
-4. 在 Worker 设置里添加两个 **Secret**: `UPLOAD_KEY` (上传密钥)、`ACCESS_TOKEN` (订阅访问令牌),
-   都用 `openssl rand -hex 16` 生成。
-5. 仓库 Secrets 添加: `WORKER_URL` (如 `https://sub.example.com`)、`UPLOAD_KEY` (同上)、
-   `ACCESS_TOKEN` (同上, 仅用于订阅文件头部的地址注释)。
-6. 三个工作流各手动运行一次。订阅地址: `<WORKER_URL>/<ACCESS_TOKEN>/gate.txt`、
-   `pool.txt`、`gate.yaml`、`pool.yaml`。
+4. 在 Worker 设置里添加一个 **Secret**: `ACCESS_TOKEN`, 用 `openssl rand -hex 16` 生成。
+   它同时是上传密钥 (`Authorization: Bearer`) 和订阅访问令牌 (URL 路径), 不再需要 `UPLOAD_KEY`。
+5. 仓库 Secrets 添加: `WORKER_URL` (如 `https://sub.example.com`)、`ACCESS_TOKEN` (同上)。
+   若之前配置过 `UPLOAD_KEY`, 可在 Worker 和仓库里删除。
+6. (可选) 让 Worker 主域名直接显示监控页: 在 Worker 设置 → Variables 添加普通变量 `PAGES_URL`
+   (即 Pages 站点根地址, 不带末尾 `/`)。之后 `<WORKER_URL>/` 就是监控页, 并转发
+   `pool.json` `ovpn.json` `gate.json` `gate-chains.txt` `gate-hosts.txt`。
+7. 三个工作流各手动运行一次。订阅地址: `<WORKER_URL>/<ACCESS_TOKEN>/gate.txt`、
+   `pool.txt`、`gate.yaml`、`pool.yaml`、`ovpn.yaml`。
 
 上传失败时工作流会报错并且不部署, 旧数据保持不变。

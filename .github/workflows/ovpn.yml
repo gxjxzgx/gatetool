@@ -5,7 +5,7 @@ name: OpenVPN Refresh
 # 住宅(ISP)节点 > 20 个时, 机房节点只进 ovpn.json (网页显示), 不进 ovpn.yaml。
 on:
   schedule:
-    - cron: "10 */3 * * *"
+    - cron: "10 */1 * * *"
   workflow_dispatch:
 
 permissions:

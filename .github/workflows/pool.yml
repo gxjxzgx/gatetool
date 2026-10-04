@@ -6,7 +6,7 @@ name: CF Edge Pool Refresh
 # 输出 pool.json / pool.txt / pool.yaml 到站点根目录。
 on:
   schedule:
-    - cron: "20 3 * * *"
+    - cron: "23 3 * * *"
   workflow_dispatch:
 
 permissions:

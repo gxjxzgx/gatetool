@@ -1,4 +1,4 @@
-# openvp (合并版)
+# gate
 
 三条独立的自动刷新流水线, 共用一个 GitHub Pages 站点和**一个监控页**(`index.html`)。
 数据文件命名规则: `<名称>.<格式>` (名称 = sstp / ovpn / pool; sstp 由 `gate.yml` + `vpngate.py` 生成)。

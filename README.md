@@ -32,7 +32,7 @@ Pages 每次部署都是整站替换。每个工作流开头运行 `tools/prepar
 
 ---
 
-## 方案 B: 订阅放私有 Worker (不进 Pages / Actions 产物)
+## 订阅放私有 Worker (不进 Pages / Actions 产物)
 
 含 UUID 的 4 个文件以及 `ovpn.yaml` 由工作流上传到你自己的 Cloudflare Worker (KV), 站点上不发布。
 

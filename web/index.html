@@ -93,6 +93,10 @@
 <script>
 let POOL = null, OVPN = null, GATE = null;
 const FILTER = { ovpn: 'all', gate: 'all' };
+// 各区块当前展开的国家; null = 尚未初始化 (首次渲染时默认展开第一个)
+const OPEN = { ovpn: null, gate: null };
+const TYPE_RANK = { residential: 0, datacenter: 1 };
+function rank(t) { return TYPE_RANK[t] != null ? TYPE_RANK[t] : 2; }
 
 const ZH = {
   'Japan': '日本', 'Korea Republic of': '韩国', 'Korea': '韩国',
@@ -134,17 +138,21 @@ function badge(t) {
   if (t === 'datacenter') return '<span class="badge b-dc">机房</span>';
   return '<span class="badge b-unk">未识别</span>';
 }
-function latCell(ms) {
-  return ms != null ? '<td class="lat">' + esc(ms) + ' ms</td>' : '<td style="color:var(--muted)">未检查</td>';
+function latText(ms) { return ms != null ? esc(ms) + ' ms' : '-'; }
+function latCell(ms, emptyText) {
+  return ms != null ? '<td class="lat">' + latText(ms) + '</td>'
+                    : '<td style="color:var(--muted)">' + (emptyText || '-') + '</td>';
 }
 // 国家分组卡片 (ovpn / gate 共用): groups = [[name, {code, nodes}], ...]; rowFn(node) -> <tr>; head = <thead> 内容
-function countryBlocks(groups, typeOf, rowFn, head, emptyMsg) {
+function countryBlocks(section, groups, typeOf, rowFn, head, emptyMsg) {
   if (!groups.length) return '<div class="country"><div class="empty">' + emptyMsg + '</div></div>';
-  return groups.map(function (x, ci) {
+  if (OPEN[section] === null) OPEN[section] = new Set([groups[0][0]]);
+  return groups.map(function (x) {
     const name = x[0], g = x[1];
     const res = g.nodes.filter(function (n) { return typeOf(n) === 'residential'; }).length;
     const dc = g.nodes.filter(function (n) { return typeOf(n) === 'datacenter'; }).length;
-    return '<div class="country' + (ci === 0 ? ' open' : '') + '">' +
+    return '<div class="country' + (OPEN[section].has(name) ? ' open' : '') +
+      '" data-s="' + section + '" data-k="' + esc(name) + '">' +
       '<div class="head"><span>🌏 ' + zhCountry(name) + ' <span class="tag">' + esc(g.code || '') + '</span></span>' +
       '<span class="tag">' + g.nodes.length + ' 个节点 · 住宅 ' + res + ' · 机房 ' + dc + '</span></div>' +
       '<table><thead><tr>' + head + '</tr></thead><tbody>' + g.nodes.map(rowFn).join('') + '</tbody></table></div>';
@@ -156,26 +164,24 @@ function renderPool() {
   if (!d) { document.getElementById('pool-cards').innerHTML = '<div class="empty">优选池数据加载失败</div>'; return; }
   const es = d.entries || [];
   document.getElementById('pool-cards').innerHTML =
-    card('池子 IP 数', es.length) + card('采样数', d.sampled || '—') + card('可用数', d.reachable || '—') +
+    card('池子 IP 数', esc(es.length)) + card('采样数', esc(d.sampled || '—')) + card('可用数', esc(d.reachable || '—')) +
     card('更新时间', '<small>' + esc(d.updated_at || '—') + '</small>');
   document.getElementById('pool-top').innerHTML = es.slice(0, 10).map(function (e, i) {
     return '<tr><td>' + (i + 1) + '</td><td><code>' + esc(e.ip) + '</code></td><td>' + esc(e.port) + '</td>' +
-      '<td class="lat">' + esc(e.latency_ms) + ' ms</td></tr>';
+      latCell(e.latency_ms) + '</tr>';
   }).join('') || '<tr><td colspan="4" class="empty">暂无数据</td></tr>';
 }
 
 function renderOvpn() {
   const d = OVPN, box = document.getElementById('ovpn-countries');
   if (!d) { document.getElementById('ovpn-cards').innerHTML = '<div class="empty">OpenVPN 数据加载失败</div>'; box.innerHTML = ''; return; }
-  const RANK = { residential: 0, datacenter: 1 };
-  const rank = function (t) { return RANK[t] != null ? RANK[t] : 2; };
   const es = (d.entries || []).slice().sort(function (a, b) { return rank(a.ip_type) - rank(b.ip_type); });
   const res = es.filter(function (e) { return e.ip_type === 'residential'; }).length;
   const dc = es.filter(function (e) { return e.ip_type === 'datacenter'; }).length;
   const unk = es.length - res - dc;
   document.getElementById('ovpn-cards').innerHTML =
-    card('节点数量', d.checked || es.length) + card('可用数量', d.total || es.length) +
-    card('国家数量', Object.keys(d.countries || {}).length) + card('住宅 / 机房 (估算)', res, '机房 ' + dc + ' · 未识别 ' + unk) +
+    card('节点数量', esc(d.checked || es.length)) + card('可用数量', esc(d.total || es.length)) +
+    card('国家数量', esc(Object.keys(d.countries || {}).length)) + card('住宅 / 机房 (估算)', esc(res), '机房 ' + dc + ' · 未识别 ' + unk) +
     card('更新时间', '<small>' + esc(d.updated_at || '—') + '</small>');
   const groups = {};
   es.forEach(function (e) {
@@ -185,10 +191,10 @@ function renderOvpn() {
     groups[k].nodes.push(e);
   });
   const list = Object.entries(groups).sort(function (a, b) { return b[1].nodes.length - a[1].nodes.length; });
-  box.innerHTML = countryBlocks(list, function (n) { return n.ip_type; }, function (e) {
+  box.innerHTML = countryBlocks('ovpn', list, function (n) { return n.ip_type; }, function (e) {
     const proto = e.proto === 'tcp' ? 'tcp' : 'udp';
     return '<tr><td><code>' + esc(e.host) + ':' + esc(e.port) + '</code></td>' +
-      '<td class="proto-' + proto + '">openvpn/' + proto + '</td>' + latCell(e.latency_ms) +
+      '<td class="proto-' + proto + '">openvpn/' + proto + '</td>' + latCell(e.latency_ms, '未检查') +
       '<td>' + badge(e.ip_type) + '</td></tr>';
   }, '<th>地址</th><th>协议</th><th>延迟</th><th>类型</th>', '没有符合当前筛选的节点');
 }
@@ -202,19 +208,17 @@ function renderGate() {
     card('可用节点', esc(s.success), 'success = true') + card('国家数量', esc(s.countries), '按可用节点统计') +
     card('住宅(估算)', esc(s.residential_est), '数据中心 ' + esc(s.datacenter_est || 0)) +
     card('更新时间', '<small>' + esc(d.generated_at || '—') + '</small>');
-  const RANK = { residential: 0, datacenter: 1 };
-  const rank = function (t) { return RANK[t] != null ? RANK[t] : 2; };
   const list = Object.entries(d.countries || {}).map(function (x) {
     const nodes = (x[1].nodes || []).filter(function (n) { return FILTER.gate === 'all' || n.residential === FILTER.gate; })
       .sort(function (a, b) { return rank(a.residential) - rank(b.residential); });
     return [x[0], { code: x[1].code, nodes: nodes }];
   }).filter(function (x) { return x[1].nodes.length > 0; })
     .sort(function (a, b) { return b[1].nodes.length - a[1].nodes.length; });
-  box.innerHTML = countryBlocks(list, function (n) { return n.residential; }, function (n) {
+  box.innerHTML = countryBlocks('gate', list, function (n) { return n.residential; }, function (n) {
     const exit = n.exit ? esc(n.exit.ip || '?') + ' · ' + esc(n.exit.org || n.exit.country || '') : '-';
     return '<tr><td><code class="copy" title="点击复制 sstp 链接">' + esc(n.host) + ':' + esc(n.port) + '</code></td>' +
       '<td class="hide-m">' + esc(n.country_code || '') + '</td><td>SSTP</td>' +
-      (n.latency_ms != null ? '<td class="lat">' + esc(n.latency_ms) + ' ms</td>' : '<td>-</td>') +
+      latCell(n.latency_ms) +
       '<td class="hide-m" style="color:var(--muted)">' + exit + '</td><td>' + badge(n.residential) + '</td>' +
       '<td class="hide-m" style="color:var(--muted)">' + esc((n.checked_at || '').split(' ')[0]) + '</td></tr>';
   }, '<th>Host:Port</th><th class="hide-m">国码</th><th>协议</th><th>延迟</th><th class="hide-m">出口</th><th>类型</th><th class="hide-m">检测日期</th>',
@@ -232,7 +236,12 @@ document.addEventListener('click', function (e) {
     return;
   }
   const head = e.target.closest('.country .head');
-  if (head) { head.parentElement.classList.toggle('open'); return; }
+  if (head) {
+    const box = head.parentElement, set = OPEN[box.dataset.s];
+    const open = box.classList.toggle('open');
+    if (set) { if (open) set.add(box.dataset.k); else set.delete(box.dataset.k); }
+    return;
+  }
   const code = e.target.closest('code.copy');
   if (code) {
     const m = code.textContent.match(/(.+):(\d+)$/);

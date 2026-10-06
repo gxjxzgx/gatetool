@@ -1,9 +1,9 @@
 name: CF Edge Pool Refresh
 
-# Cloudflare 优选池: 每天 11:20 (北京时间) 检查一次, 实际刷新条件:
-#   手动触发 / 线上无数据 / 数据超过 8 天 / 周日且距上次刷新超过 20 小时
+# Cloudflare 优选池: 每天 11:23 (北京时间) 检查一次, 实际刷新条件 (由 pool.py --check 判断):
+#   手动触发 / 线上无数据 / 数据超过 8 天 / 周日(北京时间)且距上次刷新超过 20 小时
 # 不需要刷新时, 后面的步骤全部跳过 (不重复部署)。
-# 输出 pool.json / pool.txt / pool.yaml 到站点根目录。
+# 输出 pool.json / pool.txt / pool.yaml; pool.txt / pool.yaml 上传到私有 Worker, 不发布到 Pages。
 on:
   schedule:
     - cron: "23 3 * * *"
@@ -13,10 +13,10 @@ permissions:
   contents: read
   pages: write
   id-token: write
-  actions: write
+  actions: write   # 仅用于重新启用本工作流, 防止 60 天无活动被停用
 
 jobs:
-  refresh:
+  pool:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
@@ -44,23 +44,9 @@ jobs:
 
       - name: Decide whether to refresh
         id: need
-        run: |
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json, os
-          from datetime import datetime, timezone, timedelta
-          now = datetime.now(timezone.utc)
-          age_h = None
-          try:
-              d = json.load(open("site/pool.json", encoding="utf-8"))
-              t = datetime.strptime(d["updated_at"], "%Y-%m-%d %H:%M").replace(tzinfo=timezone(timedelta(hours=8)))
-              age_h = (now - t).total_seconds() / 3600
-          except Exception:
-              pass
-          manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-          sunday_slot = now.weekday() == 6 and now.hour == 3   # 周日 11:00-11:59 北京时间
-          run = manual or age_h is None or age_h > 8 * 24 or (sunday_slot and age_h > 20)
-          print("run=" + ("true" if run else "false"))
-          PY
+        env:
+          OUT_DIR: site
+        run: python pool.py --check >> "$GITHUB_OUTPUT"
 
       - name: Refresh edge pool
         if: steps.need.outputs.run == 'true'
@@ -70,7 +56,7 @@ jobs:
           EDT_UUID: ${{ secrets.EDT_UUID }}
           POOL_SIZE: "50"
           SAMPLE_SIZE: "350"
-        run: python refresh_pool.py
+        run: python pool.py
 
       - name: Upload private subscriptions to Worker
         if: steps.need.outputs.run == 'true'

@@ -1,8 +1,9 @@
 name: Gate SSTP Check
 
-# VPN Gate SSTP 节点检测 (经 Cloudflare Worker), 每 3 小时一次。
+# VPN Gate SSTP 节点检测 (经 Cloudflare Worker), 每小时一次。
 # 输出 sstp.json / sstp.txt / sstp.yaml / sstp-chains.txt / sstp-hosts.txt; 其余文件沿用线上旧版。
 # 住宅(ISP)节点 > 20 个时, 机房节点只进 sstp.json (网页显示), 不进订阅/清单文件。
+# 修改频率时同步改 common.py 里的 REFRESH_TEXT (它会写进订阅文件头部)。
 on:
   schedule:
     - cron: "49 */1 * * *"
@@ -15,7 +16,7 @@ permissions:
   actions: write   # 仅用于重新启用本工作流, 防止 60 天无活动被停用
 
 jobs:
-  check:
+  gate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # 三个工作流共用同一个组: 串行发布, 避免互相用旧数据覆盖
@@ -30,7 +31,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Keep schedule alive (best effort)
         env:
@@ -42,19 +43,15 @@ jobs:
           PAGES_URL: ${{ vars.PAGES_URL }}
         run: bash tools/prepare_site.sh
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Check nodes and build sstp.* files
+      - name: Check SSTP nodes
         env:
-          PUBLIC_DIR: site
+          OUT_DIR: site
           CHECK_WORKER: "https://check.zx10.eu.cc/check?sstp=vpn:vpn@"
-          CHECK_CONCURRENCY: "32"
-          CHECK_TIMEOUT: "90"
+          WORKERS: "32"
+          TIMEOUT: "90"
           EDT_UUID: ${{ secrets.EDT_UUID }}
           EDT_DOMAIN: ${{ secrets.EDT_DOMAIN }}
-          SUB_URL: ${{ secrets.WORKER_URL }}/${{ secrets.ACCESS_TOKEN }}/sstp.txt
-        run: python vpngate.py
+        run: python gate.py
 
       - name: Upload private subscriptions to Worker
         env:

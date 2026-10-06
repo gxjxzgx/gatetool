@@ -1,5 +1,0 @@
-# 工作流运行时生成, 不入库
-site/
-public/
-__pycache__/
-*.pyc

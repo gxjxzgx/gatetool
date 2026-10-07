@@ -28,8 +28,8 @@ gate.py —— VPN Gate SSTP 节点检测 (工作流: gate.yml)
                           https://check.socks5.cmliussss.net/check?sstp=vpn:vpn@
   WORKERS / TIMEOUT       检测并发 (默认 32) / 单请求超时秒数 (默认 90)
   VLESS_TEST              vless 延迟测速开关 (默认 1)
-  VLESS_WORKERS           测速并发 (默认 16) / VLESS_TIMEOUT 单节点超时秒数 (默认 15)
-  VLESS_TEST_URL          测速地址, 只支持 http:// (默认 http://cp.cloudflare.com/generate_204)
+  VLESS_WORKERS           测速并发 (默认 16) / VLESS_TIMEOUT 单节点超时秒数 (默认 20)
+  VLESS_TEST_URL          测速地址, 只支持 http:// (默认 http://www.gstatic.com/generate_204)
   VLESS_CONNECT           host:port, 覆盖实际连接地址 (如指定一个优选 IP), SNI / Host 仍为 EDT_DOMAIN
   MAX_CHECK_NODES         只检测前 N 个节点, 0=不限 (本地测试用)
   EXCLUDE_DC / MIN_ISP    机房节点排除开关 (默认 1) / 住宅数量阈值 (默认 20)
@@ -68,8 +68,8 @@ MAX_CHECK_NODES = env_int("MAX_CHECK_NODES", 0)
 
 VLESS_TEST = env_flag("VLESS_TEST", True)
 VLESS_WORKERS = max(1, env_int("VLESS_WORKERS", 16))
-VLESS_TIMEOUT = env_float("VLESS_TIMEOUT", 15)
-VLESS_TEST_URL = env_str("VLESS_TEST_URL", "http://cp.cloudflare.com/generate_204")
+VLESS_TIMEOUT = env_float("VLESS_TIMEOUT", 20)
+VLESS_TEST_URL = env_str("VLESS_TEST_URL", "http://www.gstatic.com/generate_204")
 VLESS_CONNECT = env_str("VLESS_CONNECT")
 
 EDT_UUID = env_str("EDT_UUID")
@@ -251,17 +251,35 @@ def vless_request(host, port, payload):
             + b"\x02" + bytes([len(addr)]) + addr + payload)
 
 
+class ProbeError(Exception):
+    """测速失败, code 是写进 sstp.json 的简短原因 (不含域名等敏感信息), detail 只进日志。"""
+
+    def __init__(self, code, detail=""):
+        super().__init__(detail or code)
+        self.code = code
+
+
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
+
 def ws_connect(sock, rfile, host, path):
-    """WebSocket 升级握手, 非 101 抛异常。"""
+    """WebSocket 升级握手。请求头尽量接近浏览器 / 常见代理客户端, 减少被 WAF 当作机器人拦截。"""
     key = base64.b64encode(os.urandom(16)).decode()
     sock.sendall((
-        f"GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: Mozilla/5.0\r\n"
+        f"GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: {BROWSER_UA}\r\n"
+        f"Origin: https://{host}\r\nAccept-Language: en-US,en;q=0.9\r\n"
+        f"Cache-Control: no-cache\r\nPragma: no-cache\r\n"
         f"Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n"
         f"Sec-WebSocket-Version: 13\r\n\r\n"
     ).encode())
-    parts = rfile.readline(1024).split()
+    status = rfile.readline(1024)
+    parts = status.split()
+    if not parts:
+        raise ProbeError("closed_ws", "升级请求后连接被关闭")
     if parts[1:2] != [b"101"]:
-        raise ConnectionError(f"WebSocket 升级失败: {b' '.join(parts[:3])!r}")
+        code = parts[1].decode("ascii", "replace")[:3] if len(parts) > 1 else "bad"
+        raise ProbeError(f"ws_{code}", f"升级被拒绝: {status[:80]!r}")
     for _ in range(64):                                   # 丢弃响应头
         if rfile.readline(4096) in (b"\r\n", b"\n", b""):
             break
@@ -313,54 +331,94 @@ def connect_addr():
     return (host.strip("[]"), int(port)) if sep and port.isdigit() else (VLESS_CONNECT.strip("[]"), 443)
 
 
+def classify_error(exc, stage):
+    """把异常归类成简短原因码。stage: connect / tls / ws / wait (发出 VLESS 请求后等待响应)。"""
+    if isinstance(exc, ProbeError):
+        return exc.code
+    if isinstance(exc, socket.gaierror):
+        return "dns"
+    if isinstance(exc, TimeoutError):                        # socket.timeout 是它的别名
+        return f"timeout_{stage}"
+    if isinstance(exc, ssl.SSLError):
+        return "tls"
+    if isinstance(exc, ConnectionRefusedError):
+        return "refused"
+    if isinstance(exc, (EOFError, ConnectionError)):
+        return f"closed_{stage}"
+    return "other"
+
+
 def vless_probe(node):
-    """转换后的 vless 节点延迟 (毫秒), 失败返回 None。
+    """转换后的 vless 节点延迟。返回 (毫秒, None, "") 或 (None, 失败原因码, 详情)。
 
     与客户端的真实路径一致: TLS → WebSocket (path 带 SSTP 链式代理) → VLESS 请求 →
     经 SSTP 链访问 VLESS_TEST_URL → 收到 HTTP 状态行。计时从发起 TCP 连接开始, 相当于
-    Clash 的「延迟测试」。
+    Clash 的「延迟测试」。失败原因码带阶段信息, 例如:
+      ws_403 / ws_502        WebSocket 升级被拒 (WAF、路径或域名问题)
+      closed_wait            发出 VLESS 请求后被断开 (UUID 不对, 或 SSTP 链路没建起来)
+      timeout_wait           等 SSTP 链路响应超时 (节点慢或不通)
+      http_NNN               链路通了, 但测速地址返回了非 2xx/3xx
+      tls / dns / refused    连接 EDT_DOMAIN 本身就失败
     """
     target = urlsplit(VLESS_TEST_URL)
     host, port = target.hostname, target.port or 80
     http_req = (f"GET {target.path or '/'}{'?' + target.query if target.query else ''} HTTP/1.1\r\n"
                 f"Host: {host}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n").encode()
+    stage = "connect"
     t0 = time.monotonic()
     deadline = t0 + VLESS_TIMEOUT
     try:
         with socket.create_connection(connect_addr(), timeout=VLESS_TIMEOUT) as raw:
+            stage = "tls"
             with TLS_CTX.wrap_socket(raw, server_hostname=EDT_DOMAIN) as sock:
+                stage = "ws"
                 rfile = sock.makefile("rb")
                 ws_connect(sock, rfile, EDT_DOMAIN, chain_path(node))
+                stage = "wait"
                 ws_send(sock, vless_request(host, port, http_req))
                 buf = b""
-                while time.monotonic() < deadline and len(buf) <= 65536:
+                while True:
+                    if time.monotonic() >= deadline:
+                        raise ProbeError("timeout_wait", "等待链路响应超时")
                     sock.settimeout(max(0.2, deadline - time.monotonic()))
                     opcode, data = ws_recv(rfile)
-                    if opcode == 8:                       # 对端关闭 = 链路不通
-                        return None
-                    if opcode not in (0, 1, 2):          # ping / pong 等控制帧忽略
+                    if opcode == 8:                          # 对端发来关闭帧
+                        raise ProbeError("closed_wait", "对端发来 WebSocket 关闭帧")
+                    if opcode not in (0, 1, 2):             # ping / pong 等控制帧忽略
                         continue
                     buf += data
+                    if len(buf) > 65536:
+                        raise ProbeError("bad_vless", "响应过大")
                     if len(buf) < 2 or len(buf) < 2 + buf[1]:
-                        continue                          # VLESS 响应头 (version + addons) 还没收全
+                        continue                             # VLESS 响应头 (version + addons) 还没收全
                     status_line, sep, _ = buf[2 + buf[1]:].partition(b"\r\n")
                     if not sep:
                         continue
+                    if buf[0] != 0:
+                        raise ProbeError("bad_vless", f"VLESS 响应版本 {buf[0]}")
                     parts = status_line.split()
-                    ok = (buf[0] == 0 and len(parts) >= 2 and parts[0].startswith(b"HTTP/")
-                          and parts[1].isdigit() and 200 <= int(parts[1]) < 400)
-                    return round((time.monotonic() - t0) * 1000) if ok else None
-    except Exception:
-        return None
-    return None
+                    if len(parts) < 2 or not parts[0].startswith(b"HTTP/") or not parts[1].isdigit():
+                        raise ProbeError("bad_vless", f"不是 HTTP 响应: {status_line[:40]!r}")
+                    code = int(parts[1])
+                    if not 200 <= code < 400:
+                        raise ProbeError(f"http_{code}", f"测速地址返回 {code}")
+                    return round((time.monotonic() - t0) * 1000), None, ""
+    except Exception as exc:
+        return None, classify_error(exc, stage), f"{type(exc).__name__}: {exc}"
 
 
 def probe_vless_all(nodes):
-    """并发测速, 结果写入每个节点的 vless_ms (失败为 None), 返回成功个数。"""
+    """并发测速。成功写入 vless_ms; 失败写入 vless_ms=None 和 vless_err (原因码)。
+    返回 (成功数, 原因码计数, {原因码: 首个详情})。"""
+    reasons, samples = Counter(), {}
     with ThreadPoolExecutor(max_workers=VLESS_WORKERS) as pool:
-        for node, ms in zip(nodes, pool.map(vless_probe, nodes)):
+        for node, (ms, code, detail) in zip(nodes, pool.map(vless_probe, nodes)):
             node["vless_ms"] = ms
-    return sum(1 for n in nodes if n["vless_ms"] is not None)
+            if ms is None:
+                node["vless_err"] = code
+                reasons[code] += 1
+                samples.setdefault(code, detail)
+    return len(nodes) - sum(reasons.values()), reasons, samples
 
 
 # ---------------------------------------------------------------- 5. 分组 / 排序
@@ -636,10 +694,15 @@ def main():
     if VLESS_TEST:
         log(f"== 4/5 vless 延迟测速 (并发 {VLESS_WORKERS}, 超时 {VLESS_TIMEOUT:g}s, 目标 {VLESS_TEST_URL}) ==")
         t1 = time.time()
-        vless_ok = probe_vless_all(success)
+        vless_ok, reasons, samples = probe_vless_all(success)
         log(f"vless 可用 {vless_ok}/{len(success)}, 耗时 {time.time() - t1:.1f}s")
+        if reasons:
+            log("失败原因: " + ", ".join(f"{code} x{n}" for code, n in reasons.most_common()))
+            for code, _ in reasons.most_common(4):
+                log(f"  示例 {code}: {samples[code]}")
         if not vless_ok:
-            log("警告: 所有节点 vless 测速都失败, 请检查 EDT_DOMAIN / EDT_UUID 与 edgetunnel 是否正常; 页面延迟将显示 -")
+            log("警告: 所有节点 vless 测速都失败。按上面的失败原因排查: ws_403 = 域名的 WAF/Bot 规则拦截了 Actions;"
+                " closed_wait = UUID 不对或 SSTP 链路没建起来; tls/dns = EDT_DOMAIN 本身连不上。页面延迟列会显示失败原因")
     else:
         log("== 4/5 vless 延迟测速: 已关闭 (VLESS_TEST=0) ==")
 

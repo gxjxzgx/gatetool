@@ -26,11 +26,26 @@
    WebSocket (path 带 SSTP 链式代理, 与 `sstp.txt` 里的节点完全一致), 发 VLESS 请求并经 SSTP 链访问
    `VLESS_TEST_URL`, 记录从发起连接到收到 HTTP 响应的耗时, 写入 `sstp.json` 的 `vless_ms`。
 
-- 监控页的「vless 延迟」列显示 `vless_ms`, 「-」表示测速失败 (节点仍保留, 只是排在后面)。
+- 监控页的「vless 延迟」列显示 `vless_ms`; 测速失败时显示失败原因 (节点仍保留, 只是排在后面)。
 - 订阅 / 清单里同一类型内按 `vless_ms` 升序排列, 序号随之变化。
 - 测速需要 `EDT_UUID` 是合法 UUID, 且 `EDT_DOMAIN` 有有效证书 (脚本会校验证书)。
 - 测速在 Actions 里完成, **UUID 不会进入公开页面**; 页面只读 `sstp.json` 里的延迟数字。
-- 如果所有节点测速都失败, 日志会给出警告, 请检查 `EDT_DOMAIN` / `EDT_UUID` 与 edgetunnel 是否正常。
+- 如果所有节点测速都失败, 日志会给出警告和失败原因统计。
+
+**失败原因** (页面显示的文字 / `sstp.json` 里的 `vless_err` / Actions 日志里的原因码):
+
+| 页面显示 | 原因码 | 含义和排查 |
+|---|---|---|
+| WS 403 / WS 5xx | `ws_403` ... | WebSocket 升级被拒。403 多半是域名的 WAF / Bot Fight Mode 拦截了 GitHub Actions 的 IP, 需要放行; 5xx 检查 edgetunnel 是否正常 |
+| 链路断开 | `closed_wait` | 发出 VLESS 请求后被断开: UUID 不对, 或 SSTP 链路没建起来 |
+| 链路超时 | `timeout_wait` | 等 SSTP 链路响应超时, 节点慢或不通 (单个节点出现属正常) |
+| HTTP 4xx / 5xx | `http_NNN` | 链路通了, 但测速地址返回了错误状态 |
+| TLS 失败 / DNS 失败 / 拒绝连接 | `tls` `dns` `refused` | 连 `EDT_DOMAIN` 本身就失败: 域名、证书或解析问题 |
+| 连接超时 / 连接断开 | `timeout_*` `closed_*` | 握手阶段超时或被断开 |
+| 协议异常 | `bad_vless` | 收到的不是合法的 VLESS / HTTP 响应 |
+
+- 页面显示 "-" 而不是原因, 通常说明 `sstp.json` 还是旧数据: `ovpn.yml` / `pool.yml` 的发布会沿用线上旧的 `sstp.json`,
+  需要手动运行一次 `Gate SSTP Check`。
 
 ## 节点命名
 
@@ -96,8 +111,8 @@ Pages 每次部署都是整站替换。每个工作流开头运行 `tools/prepar
 | `EDT_FINGERPRINT` / `SUB_FP` | gate / pool | chrome | TLS 指纹 |
 | `CHECK_WORKER` | gate | **无默认值, 必填** | 检测服务地址前缀, 只在 `gate.yml` 里设置 (当前 `https://check.socks5.cmliussss.net/check?sstp=vpn:vpn@`) |
 | `VLESS_TEST` | gate | 1 | vless 延迟测速开关 |
-| `VLESS_WORKERS` / `VLESS_TIMEOUT` | gate | 16 / 15 | 测速并发 / 单节点超时秒数 |
-| `VLESS_TEST_URL` | gate | `http://cp.cloudflare.com/generate_204` | 测速地址, 只支持 http:// |
+| `VLESS_WORKERS` / `VLESS_TIMEOUT` | gate | 16 / 20 | 测速并发 / 单节点超时秒数 |
+| `VLESS_TEST_URL` | gate | `http://www.gstatic.com/generate_204` | 测速地址, 只支持 http:// (与 `sstp.yaml` 的 Clash 测试地址一致) |
 | `VLESS_CONNECT` | gate | `EDT_DOMAIN:443` | 覆盖实际连接地址 (如指定优选 IP), SNI / Host 仍为 `EDT_DOMAIN` |
 | `MAX_CHECK_NODES` | gate | 0 | 只检测前 N 个, 本地测试用 |
 | `EDGE_HOSTS` | gate | 内置 85 个 | 逗号分隔的入口地址池 |

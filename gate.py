@@ -49,7 +49,7 @@ from common import (
 log, die = make_logger("gate")
 
 # ---------------------------------------------------------------- 配置
-CHECK_WORKER = env_str("CHECK_WORKER", "https://check.socks5.cmliussss.net/check?sstp=vpn:vpn@")
+CHECK_WORKER = env_str("CHECK_WORKER")
 WORKERS = max(1, env_int("WORKERS", 32))
 TIMEOUT = env_float("TIMEOUT", 90)
 MAX_CHECK_NODES = env_int("MAX_CHECK_NODES", 0)

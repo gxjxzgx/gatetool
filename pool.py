@@ -161,7 +161,7 @@ def camo_path():
 
 
 def build_nodes(picked):
-    """返回 [(名字, IP, ws_path)]。名字按 IP 类型编号, 与 worker 别名规则一致。"""
+    """返回 [(名字, IP, ws_path)]。名字: IPv4优选-序号 / IPv6优选-序号。"""
     path_override = env_str("SUB_PATH")
     prefix = env_str("SUB_PREFIX")
     proxy_ips = ",".join(ip for ip, _ in random.sample(picked, min(8, len(picked))))

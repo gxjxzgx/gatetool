@@ -31,9 +31,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from common import (
-    OUT_DIR, classify_host, decode_config, drop_datacenter, env_flag, env_float, env_int,
-    fetch_vpngate_rows, is_public_host, make_logger, now_bj, parse_remote, type_rank,
-    write_json, write_text, yaml_str,
+    OUT_DIR, classify_host, country_label, decode_config, drop_datacenter, env_flag, env_float,
+    env_int, fetch_vpngate_rows, is_public_host, make_logger, node_name, now_bj, parse_remote,
+    type_rank, write_json, write_text, yaml_str,
 )
 
 log, die = make_logger("ovpn")
@@ -46,11 +46,6 @@ KEEP_UDP = env_flag("KEEP_UDP", True)
 
 # 配置内容来自第三方, 写入 YAML 前必须校验
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
-TYPE_LABEL = {
-    "residential": ("🏠", "家宽"),
-    "datacenter": ("🏢", "机房"),
-    "unknown": ("🌐", "未识别"),
-}
 
 
 # ---------------------------------------------------------------- 提取
@@ -124,7 +119,7 @@ def cfg_directive(cfg, name, default):
 
 
 def build_clash_yaml(nodes):
-    """Clash proxies 列表。证书全网通用: 取第一个带完整证书的节点, 用 YAML 锚点定义, 其余引用。"""
+    """Clash proxies 列表。名字: 国家-类型-序号-ovpn (与 sstp 同一规则)。证书全网通用: 取第一个带完整证书的节点, 用 YAML 锚点定义, 其余引用。"""
     for n in nodes:
         ca, cert, key = (pem_block(n["config"], t) for t in ("ca", "cert", "key"))
         if ca and cert and key:
@@ -138,10 +133,10 @@ def build_clash_yaml(nodes):
     counters = {}
     out = ["proxies:"]
     for i, n in enumerate(nodes):
-        cs = re.sub(r"\W+", "", n["country_short"]) or "XX"
-        icon, label = TYPE_LABEL[n["ip_type"]]
-        counters[(cs, label)] = counters.get((cs, label), 0) + 1
-        name = f"{icon} {cs}-{label}-{counters[(cs, label)]:02d}"
+        region = country_label(n["country_short"], n["country_long"])
+        group = (region, n["ip_type"])
+        counters[group] = counters.get(group, 0) + 1
+        name = node_name(region, n["ip_type"], counters[group], "ovpn")
         cfg = n["config"]
         out += [
             f"  - name: {yaml_str(name)}",

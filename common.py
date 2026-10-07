@@ -73,6 +73,42 @@ EXCLUDE_DC = env_flag("EXCLUDE_DC", True)
 MIN_ISP = env_int("MIN_ISP", 20)
 
 
+# ---------------------------------------------------------------- 节点命名 (所有输出文件共用)
+# 规则: 地区-类型-序号-协议, 例: 日本-住宅-01-sstp / 日本-住宅-01-ovpn / IPv4优选-01-pool
+TYPE_ORDER = ("residential", "datacenter", "unknown")
+TYPE_LABEL = {"residential": "住宅", "datacenter": "机房", "unknown": "未识别"}
+
+# ISO 国家码 -> 中文名 (未收录则回退国家码 / 英文原名)
+COUNTRY_ZH = {
+    "JP": "日本", "KR": "韩国", "US": "美国", "CA": "加拿大", "RU": "俄罗斯",
+    "RO": "罗马尼亚", "TH": "泰国", "VN": "越南", "DE": "德国", "FR": "法国",
+    "GB": "英国", "UK": "英国", "SG": "新加坡", "TW": "台湾", "HK": "香港",
+    "CN": "中国", "AU": "澳大利亚", "NL": "荷兰", "SE": "瑞典", "CH": "瑞士",
+    "IT": "意大利", "ES": "西班牙", "PL": "波兰", "IN": "印度", "BR": "巴西",
+    "MX": "墨西哥", "ID": "印度尼西亚", "MY": "马来西亚", "PH": "菲律宾",
+    "TR": "土耳其", "UA": "乌克兰", "CZ": "捷克", "GR": "希腊", "PT": "葡萄牙",
+    "FI": "芬兰", "NO": "挪威", "DK": "丹麦", "IE": "爱尔兰", "BE": "比利时",
+    "AT": "奥地利", "HU": "匈牙利", "AR": "阿根廷", "CL": "智利", "CO": "哥伦比亚",
+    "NZ": "新西兰", "ZA": "南非", "IL": "以色列", "AE": "阿联酋", "SA": "沙特",
+    "EG": "埃及", "HR": "克罗地亚", "BY": "白俄罗斯", "GD": "格林纳达",
+    "LV": "拉脱维亚", "EE": "爱沙尼亚", "LT": "立陶宛", "SK": "斯洛伐克",
+    "SI": "斯洛文尼亚", "BG": "保加利亚", "RS": "塞尔维亚", "GE": "格鲁吉亚",
+    "MD": "摩尔多瓦", "AM": "亚美尼亚", "KZ": "哈萨克斯坦", "UZ": "乌兹别克斯坦",
+    "MN": "蒙古", "NP": "尼泊尔", "LK": "斯里兰卡", "MM": "缅甸",
+}
+
+
+def country_label(code, name=""):
+    """国家显示名: 中文名 > 国家码 > 英文原名。"""
+    code = (code or "").strip().upper()
+    return COUNTRY_ZH.get(code) or (code if code and code != "?" else (name or "未知"))
+
+
+def node_name(region, ip_type, index, proto):
+    """统一的节点名: 地区-类型-序号-协议。"""
+    return f"{region}-{TYPE_LABEL.get(ip_type, TYPE_LABEL['unknown'])}-{index:02d}-{proto}"
+
+
 # ---------------------------------------------------------------- 日志
 def make_logger(tag):
     """返回 (log, die)。die 打印到 stderr 并以退出码 1 结束。"""

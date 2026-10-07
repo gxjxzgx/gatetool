@@ -84,7 +84,7 @@
     <span class="pill" data-f="datacenter">数据中心</span>
     <span class="pill" data-f="unknown">未识别</span>
   </div>
-  <div class="legend">节点来自 VPN Gate（仅 TCP 入口中继），先由检测服务判定可用；「vless 延迟」是转换成 vless 后经 edgetunnel 链式代理实测的往返耗时（TLS + WebSocket + 访问 generate_204），「-」表示测速失败。「住宅 / 数据中心」为基于出口信息的估算。点击 host:port 复制 sstp 链接。住宅节点 &gt; 20 个时，机房节点只在此页显示，不写入订阅/清单；列表按 住宅 → 机房 → 未识别 排序。</div>
+  <div class="legend">节点来自 VPN Gate（仅 TCP 入口中继），先由检测服务判定可用；「vless 延迟」是转换成 vless 后经 edgetunnel 链式代理实测的往返耗时（TLS + WebSocket + 访问 generate_204），测速失败时这一列显示失败原因（如 WS 403、链路断开、链路超时）。「住宅 / 数据中心」为基于出口信息的估算。点击 host:port 复制 sstp 链接。住宅节点 &gt; 20 个时，机房节点只在此页显示，不写入订阅/清单；列表按 住宅 → 机房 → 未识别 排序。</div>
   <div id="gate-countries"></div>
 
   <div class="footer" id="foot">加载中…</div>
@@ -137,6 +137,18 @@ function badge(t) {
   if (t === 'residential') return '<span class="badge b-res">住宅</span>';
   if (t === 'datacenter') return '<span class="badge b-dc">机房</span>';
   return '<span class="badge b-unk">未识别</span>';
+}
+// vless 测速失败原因码 (gate.py 的 classify_error) -> 简短中文
+function vlessErr(code) {
+  if (!code) return '-';
+  let m;
+  if ((m = /^ws_(\w+)$/.exec(code))) return 'WS ' + m[1];
+  if ((m = /^http_(\d+)$/.exec(code))) return 'HTTP ' + m[1];
+  if (code === 'timeout_wait') return '链路超时';
+  if (code === 'closed_wait') return '链路断开';
+  if (code.indexOf('timeout_') === 0) return '连接超时';
+  if (code.indexOf('closed_') === 0) return '连接断开';
+  return ({ tls: 'TLS 失败', dns: 'DNS 失败', refused: '拒绝连接', bad_vless: '协议异常' })[code] || '失败';
 }
 function latText(ms) { return ms != null ? esc(ms) + ' ms' : '-'; }
 function latCell(ms, emptyText) {
@@ -220,7 +232,7 @@ function renderGate() {
     const exit = n.exit ? esc(n.exit.ip || '?') + ' · ' + esc(n.exit.org || n.exit.country || '') : '-';
     return '<tr><td><code class="copy" title="点击复制 sstp 链接">' + esc(n.host) + ':' + esc(n.port) + '</code></td>' +
       '<td class="hide-m">' + esc(n.country_code || '') + '</td><td>SSTP</td>' +
-      latCell(n.vless_ms) +
+      latCell(n.vless_ms, esc(vlessErr(n.vless_err))) +
       '<td class="hide-m" style="color:var(--muted)">' + exit + '</td><td>' + badge(n.residential) + '</td>' +
       '<td class="hide-m" style="color:var(--muted)">' + esc((n.checked_at || '').split(' ')[0]) + '</td></tr>';
   }, '<th>Host:Port</th><th class="hide-m">国码</th><th>协议</th><th>vless 延迟</th><th class="hide-m">出口</th><th>类型</th><th class="hide-m">检测日期</th>',

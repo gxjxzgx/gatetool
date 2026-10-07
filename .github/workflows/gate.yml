@@ -46,7 +46,7 @@ jobs:
       - name: Check SSTP nodes
         env:
           OUT_DIR: site
-          CHECK_WORKER: "https://check.zx10.eu.cc/check?sstp=vpn:vpn@"
+          CHECK_WORKER: "https://check.socks5.cmliussss.net/check?sstp=vpn:vpn@"
           WORKERS: "32"
           TIMEOUT: "90"
           EDT_UUID: ${{ secrets.EDT_UUID }}

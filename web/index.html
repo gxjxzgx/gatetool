@@ -57,7 +57,7 @@
   <h1>Cloudflare · 节点监控</h1>
   <div class="sub">Cloudflare 优选池 + VPN Gate OpenVPN + VPN Gate SSTP，三个 GitHub Actions 工作流分别定时刷新</div>
 
-  <h2>☁️ Cloudflare 优选池 <small style="color:var(--muted);font-weight:400">pool</small></h2>
+  <h2>Cloudflare 优选池 <small style="color:var(--muted);font-weight:400">pool</small></h2>
   <div class="cards" id="pool-cards"></div>
   <div class="note">延迟最低的前 10 个入口：</div>
   <div class="pool-table"><table>
@@ -65,7 +65,7 @@
     <tbody id="pool-top"></tbody>
   </table></div>
 
-  <h2>🔒 OpenVPN 节点 <small style="color:var(--muted);font-weight:400">ovpn</small></h2>
+  <h2>OpenVPN 节点 <small style="color:var(--muted);font-weight:400">ovpn</small></h2>
   <div class="cards" id="ovpn-cards"></div>
   <div class="bar" data-s="ovpn">
     <span class="pill on" data-f="all">全部</span>
@@ -76,7 +76,7 @@
   <div class="legend">「住宅 / 数据中心」按 VPN Gate 主机名前缀估算（vpn+数字→住宅，public-vpn→机房），非严格判定。住宅节点 > 20 个时，机房节点只在此页显示，不写入订阅；列表按 住宅 → 机房 → 未识别 排序。</div>
   <div id="ovpn-countries"></div>
 
-  <h2>🛰 SSTP 节点检测 <small style="color:var(--muted);font-weight:400">sstp</small></h2>
+  <h2>SSTP 节点检测 <small style="color:var(--muted);font-weight:400">sstp</small></h2>
   <div class="cards" id="gate-cards"></div>
   <div class="bar" data-s="gate">
     <span class="pill on" data-f="all">全部</span>
@@ -84,7 +84,7 @@
     <span class="pill" data-f="datacenter">数据中心</span>
     <span class="pill" data-f="unknown">未识别</span>
   </div>
-  <div class="legend">节点来自 VPN Gate（仅 TCP 入口中继），由 Cloudflare Worker 检测；「住宅 / 数据中心」为基于出口信息的估算。点击 host:port 复制 sstp 链接。住宅节点 &gt; 20 个时，机房节点只在此页显示，不写入订阅/清单；列表按 住宅 → 机房 → 未识别 排序。</div>
+  <div class="legend">节点来自 VPN Gate（仅 TCP 入口中继），先由检测服务判定可用；「vless 延迟」是转换成 vless 后经 edgetunnel 链式代理实测的往返耗时（TLS + WebSocket + 访问 generate_204），「-」表示测速失败。「住宅 / 数据中心」为基于出口信息的估算。点击 host:port 复制 sstp 链接。住宅节点 &gt; 20 个时，机房节点只在此页显示，不写入订阅/清单；列表按 住宅 → 机房 → 未识别 排序。</div>
   <div id="gate-countries"></div>
 
   <div class="footer" id="foot">加载中…</div>
@@ -153,7 +153,7 @@ function countryBlocks(section, groups, typeOf, rowFn, head, emptyMsg) {
     const dc = g.nodes.filter(function (n) { return typeOf(n) === 'datacenter'; }).length;
     return '<div class="country' + (OPEN[section].has(name) ? ' open' : '') +
       '" data-s="' + section + '" data-k="' + esc(name) + '">' +
-      '<div class="head"><span>🌏 ' + zhCountry(name) + ' <span class="tag">' + esc(g.code || '') + '</span></span>' +
+      '<div class="head"><span>' + zhCountry(name) + ' <span class="tag">' + esc(g.code || '') + '</span></span>' +
       '<span class="tag">' + g.nodes.length + ' 个节点 · 住宅 ' + res + ' · 机房 ' + dc + '</span></div>' +
       '<table><thead><tr>' + head + '</tr></thead><tbody>' + g.nodes.map(rowFn).join('') + '</tbody></table></div>';
   }).join('');
@@ -204,8 +204,10 @@ function renderGate() {
   if (!d) { document.getElementById('gate-cards').innerHTML = '<div class="empty">SSTP 数据加载失败</div>'; box.innerHTML = ''; return; }
   const s = d.stats || {};
   document.getElementById('gate-cards').innerHTML =
-    card('SSTP 节点', esc(s.sstp_nodes), '筛选自 VPN Gate') + card('已检测', esc(s.checked), '提交给 Worker') +
-    card('可用节点', esc(s.success), 'success = true') + card('国家数量', esc(s.countries), '按可用节点统计') +
+    card('SSTP 节点', esc(s.sstp_nodes), '筛选自 VPN Gate') + card('已检测', esc(s.checked), '提交给检测服务') +
+    card('可用节点', esc(s.success), 'success = true') +
+    card('vless 测速', s.vless_tested ? esc(s.vless_ok) + ' / ' + esc(s.vless_tested) : '—', '经 edgetunnel 链式代理实测') +
+    card('国家数量', esc(s.countries), '按可用节点统计') +
     card('住宅(估算)', esc(s.residential_est), '数据中心 ' + esc(s.datacenter_est || 0)) +
     card('更新时间', '<small>' + esc(d.generated_at || '—') + '</small>');
   const list = Object.entries(d.countries || {}).map(function (x) {
@@ -218,10 +220,10 @@ function renderGate() {
     const exit = n.exit ? esc(n.exit.ip || '?') + ' · ' + esc(n.exit.org || n.exit.country || '') : '-';
     return '<tr><td><code class="copy" title="点击复制 sstp 链接">' + esc(n.host) + ':' + esc(n.port) + '</code></td>' +
       '<td class="hide-m">' + esc(n.country_code || '') + '</td><td>SSTP</td>' +
-      latCell(n.latency_ms) +
+      latCell(n.vless_ms) +
       '<td class="hide-m" style="color:var(--muted)">' + exit + '</td><td>' + badge(n.residential) + '</td>' +
       '<td class="hide-m" style="color:var(--muted)">' + esc((n.checked_at || '').split(' ')[0]) + '</td></tr>';
-  }, '<th>Host:Port</th><th class="hide-m">国码</th><th>协议</th><th>延迟</th><th class="hide-m">出口</th><th>类型</th><th class="hide-m">检测日期</th>',
+  }, '<th>Host:Port</th><th class="hide-m">国码</th><th>协议</th><th>vless 延迟</th><th class="hide-m">出口</th><th>类型</th><th class="hide-m">检测日期</th>',
   '没有符合当前筛选的可用节点（本轮 Worker 判定全部不可用或无数据）');
 }
 

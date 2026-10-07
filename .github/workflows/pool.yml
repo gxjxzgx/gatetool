@@ -54,8 +54,8 @@ jobs:
           OUT_DIR: site
           EDT_DOMAIN: ${{ secrets.EDT_DOMAIN }}
           EDT_UUID: ${{ secrets.EDT_UUID }}
-          POOL_SIZE: "20"
-          SAMPLE_SIZE: "200"
+          POOL_SIZE: "50"
+          SAMPLE_SIZE: "350"
         run: python pool.py
 
       - name: Upload private subscriptions to Worker

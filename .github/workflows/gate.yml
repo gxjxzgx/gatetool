@@ -1,12 +1,13 @@
 name: Gate SSTP Check
 
-# VPN Gate SSTP 节点检测 (经 Cloudflare Worker), 每小时一次。
+# VPN Gate SSTP 节点检测, 每小时一次: 先由检测服务 (CHECK_WORKER) 判定可用,
+# 再对可用节点做「转换后的 vless 延迟测速」(经 EDT_DOMAIN 的 edgetunnel 链式代理实测)。
 # 输出 sstp.json / sstp.txt / sstp.yaml / sstp-chains.txt / sstp-hosts.txt; 其余文件沿用线上旧版。
 # 住宅(ISP)节点 > 20 个时, 机房节点只进 sstp.json (网页显示), 不进订阅/清单文件。
 # 修改频率时同步改 common.py 里的 REFRESH_TEXT (它会写进订阅文件头部)。
 on:
   schedule:
-    - cron: "49 */1 * * *"
+    - cron: "49 * * * *"
   workflow_dispatch:
 
 permissions:
